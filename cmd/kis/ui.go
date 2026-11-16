@@ -1,0 +1,97 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"golang.org/x/term"
+)
+
+var assumeYes bool
+
+var stdinReader = bufio.NewReader(os.Stdin)
+
+func interactive() bool {
+	return !assumeYes && term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+func readLine() string {
+	line, _ := stdinReader.ReadString('\n')
+	return strings.TrimSpace(line)
+}
+
+// ask prompts for a value, returning def when not interactive or left empty.
+func ask(question, def string) string {
+	if !interactive() {
+		return def
+	}
+	if def != "" {
+		fmt.Fprintf(os.Stderr, "%s [%s]: ", question, def)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s: ", question)
+	}
+	if v := readLine(); v != "" {
+		return v
+	}
+	return def
+}
+
+func confirm(question string, def bool) bool {
+	if !interactive() {
+		return def
+	}
+	hint := "Y/n"
+	if !def {
+		hint = "y/N"
+	}
+	fmt.Fprintf(os.Stderr, "%s [%s]: ", question, hint)
+	switch strings.ToLower(readLine()) {
+	case "":
+		return def
+	case "y", "yes", "s", "si", "sí":
+		return true
+	}
+	return false
+}
+
+// choose shows a numbered menu and returns the selected index.
+func choose(question string, options []string, def int) int {
+	if !interactive() {
+		return def
+	}
+	fmt.Fprintln(os.Stderr, question)
+	for i, o := range options {
+		fmt.Fprintf(os.Stderr, "  %d) %s\n", i+1, o)
+	}
+	for {
+		fmt.Fprintf(os.Stderr, "Choose [%d]: ", def+1)
+		v := readLine()
+		if v == "" {
+			return def
+		}
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= len(options) {
+			return n - 1
+		}
+	}
+}
+
+// passphrasePrompt reads an SSH key passphrase from the terminal.
+func passphrasePrompt(path string) func() ([]byte, error) {
+	return func() ([]byte, error) {
+		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+		if err != nil {
+			tty = os.Stdin
+		} else {
+			defer tty.Close()
+		}
+		fmt.Fprintf(os.Stderr, "Passphrase for %s: ", path)
+		defer fmt.Fprintln(os.Stderr)
+		return term.ReadPassword(int(tty.Fd()))
+	}
+}
+
+func step(format string, a ...any) { fmt.Printf("  ✓ "+format+"\n", a...) }
+func warn(format string, a ...any) { fmt.Printf("  ! "+format+"\n", a...) }
