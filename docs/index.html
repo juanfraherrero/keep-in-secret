@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kis · keep-in-secret</title>
+<meta name="description" content="Commit your .env to git, encrypted. Share it with your team. Plain git add, push and pull — plaintext never reaches the remote.">
+<meta name="theme-color" content="#05070d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2305070d'/%3E%3Cpath d='M10 14v-3a6 6 0 0 1 12 0v3' stroke='%2322e1ff' stroke-width='2.5' fill='none'/%3E%3Crect x='7' y='14' width='18' height='12' rx='3' fill='%238b5cf6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #05070d;
+  --bg-2: #090d18;
+  --panel: rgba(13, 19, 34, .72);
+  --panel-solid: #0c1220;
+  --line: #1a2540;
+  --line-2: #26345a;
+  --text: #e7edf8;
+  --muted: #8b98b4;
+  --dim: #5a6684;
+
+  --cyan: #22e1ff;     /* git / flow */
+  --violet: #9b6bff;   /* ciphertext */
+  --lime: #5cf2a0;     /* plaintext */
+  --amber: #ffc24b;    /* keys */
+  --pink: #ff4fa3;     /* auth tag / danger */
+
+  --grad: linear-gradient(100deg, var(--cyan), var(--violet) 55%, var(--pink));
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --r: 14px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 var(--sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+code, pre, .mono { font-family: var(--mono); }
+::selection { background: rgba(155, 107, 255, .4); }
+
+.wrap { width: min(1160px, 100% - 32px); margin-inline: auto; }
+
+/* ---------- background ---------- */
+.bg {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
+}
+.bg .grid {
+  position: absolute; inset: -50% -50% 0;
+  background-image:
+    linear-gradient(rgba(34, 225, 255, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 225, 255, .07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(700px) rotateX(58deg) translateY(0);
+  transform-origin: 50% 0;
+  animation: gridmove 14s linear infinite;
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 22%, #000 10%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 22%, #000 10%, transparent 70%);
+}
+@keyframes gridmove { to { background-position: 0 56px, 0 0; } }
+.orb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .35; }
+.orb.a { width: 520px; height: 520px; background: var(--violet); top: -160px; left: -120px; animation: drift 18s ease-in-out infinite alternate; }
+.orb.b { width: 460px; height: 460px; background: var(--cyan); top: 120px; right: -160px; opacity: .22; animation: drift 22s ease-in-out infinite alternate-reverse; }
+@keyframes drift { to { transform: translate(80px, 60px) scale(1.15); } }
+
+/* ---------- nav ---------- */
+nav.top {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(5, 7, 13, .6);
+  border-bottom: 1px solid transparent;
+  transition: border-color .4s, background .4s;
+}
+nav.top.scrolled { border-bottom-color: var(--line); background: rgba(5, 7, 13, .82); }
+nav.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 16px; }
+.logo { display: flex; align-items: center; gap: 10px; font: 700 20px var(--mono); letter-spacing: -.02em; }
+.logo svg { width: 28px; height: 28px; }
+.logo small { font: 500 12px var(--mono); color: var(--muted); letter-spacing: 0; }
+.links { display: flex; align-items: center; gap: 6px; }
+.links a.l {
+  padding: 8px 12px; border-radius: 8px; color: var(--muted); font-size: 15px;
+  transition: color .25s, background .25s;
+}
+.links a.l:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 18px; border-radius: 10px;
+  font: 600 15px var(--sans);
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, .03);
+  color: var(--text);
+  transition: transform .25s var(--ease), border-color .25s, background .25s, box-shadow .25s;
+  cursor: pointer;
+}
+.btn:hover { transform: translateY(-2px); border-color: var(--cyan); box-shadow: 0 8px 30px -10px rgba(34, 225, 255, .5); }
+.btn svg { width: 18px; height: 18px; }
+.btn.primary {
+  border: 0; color: #05070d;
+  background: linear-gradient(100deg, var(--cyan), #7aa8ff 50%, var(--violet));
+  background-size: 200% 100%;
+  animation: sheen 6s ease-in-out infinite;
+}
+.btn.primary:hover { box-shadow: 0 10px 40px -8px rgba(155, 107, 255, .7); }
+@keyframes sheen { 50% { background-position: 100% 0; } }
+.btn.sm { padding: 8px 14px; font-size: 14px; }
+
+/* ---------- hero ---------- */
+.hero { padding: 88px 0 56px; }
+.hero .wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+.hero .wrap > *, .two > *, .lanes > * { min-width: 0; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: rgba(13, 19, 34, .6);
+  font: 500 13px var(--mono); color: var(--muted);
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); animation: blink 2s infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+h1 {
+  font-size: clamp(40px, 6.2vw, 72px); line-height: 1.02; letter-spacing: -.035em;
+  margin: 22px 0 20px; font-weight: 700;
+}
+.grad {
+  background: var(--grad); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: sheen 8s ease-in-out infinite;
+}
+.lead { font-size: 19px; color: var(--muted); max-width: 540px; margin: 0 0 32px; }
+.lead code { color: var(--text); background: rgba(255,255,255,.05); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.install {
+  margin-top: 28px; display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 16px; border-radius: 12px;
+  border: 1px dashed var(--line-2); background: rgba(9, 13, 24, .7);
+  font: 13.5px var(--mono); color: var(--muted); max-width: 560px;
+}
+.install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--text); scrollbar-width: none; }
+.install code::-webkit-scrollbar { display: none; }
+.install .p { color: var(--cyan); }
+
+/* terminal */
+.term {
+  border-radius: var(--r); overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, rgba(14, 20, 36, .92), rgba(8, 11, 20, .95));
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .8), 0 0 0 1px rgba(34, 225, 255, .04), 0 0 60px -20px rgba(155, 107, 255, .35);
+  position: relative;
+}
+.term::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 3px);
+}
+.bar { display: flex; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.bar i { width: 11px; height: 11px; border-radius: 50%; background: #2a3550; }
+.bar i:nth-child(1) { background: #ff5f57; } .bar i:nth-child(2) { background: #febc2e; } .bar i:nth-child(3) { background: #28c840; }
+.bar span { margin-left: 8px; font: 12px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.term pre {
+  margin: 0; padding: 18px 18px 22px; min-height: 318px;
+  font-size: 13px; line-height: 1.75; white-space: pre-wrap; word-break: break-all;
+}
+.t-p { color: var(--cyan); } .t-ok { color: var(--lime); } .t-dim { color: var(--dim); }
+.t-v { color: var(--violet); } .t-a { color: var(--amber); }
+.caret { display: inline-block; width: 8px; height: 1.1em; vertical-align: -3px; background: var(--cyan); animation: blink 1s steps(1) infinite; }
+
+/* ---------- sections ---------- */
+section { padding: 96px 0; position: relative; }
+.eyebrow { font: 600 13px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); display: flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ""; width: 24px; height: 1px; background: currentColor; }
+h2 { font-size: clamp(30px, 4.2vw, 46px); line-height: 1.08; letter-spacing: -.03em; margin: 14px 0 16px; }
+.sub { color: var(--muted); font-size: 18px; max-width: 680px; margin: 0; }
+h3 { font-size: 21px; letter-spacing: -.01em; margin: 0 0 8px; }
+
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+.reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; } .reveal.d3 { transition-delay: .24s; }
+
+.card {
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: border-color .35s, transform .35s var(--ease), box-shadow .35s;
+}
+.card.hov:hover { border-color: var(--line-2); transform: translateY(-4px); box-shadow: 0 24px 60px -30px rgba(34, 225, 255, .35); }
+
+/* ---------- flow visualization ---------- */
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 22px; font: 13px var(--mono); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+.stage {
+  margin-top: 40px; padding: 28px; border-radius: 20px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 50% 0, rgba(34, 225, 255, .08), transparent 60%),
+    linear-gradient(180deg, rgba(12, 18, 32, .85), rgba(7, 10, 19, .9));
+  position: relative; overflow: hidden;
+}
+.lanes { display: grid; grid-template-columns: 1fr 96px 1fr 96px 1fr; align-items: stretch; }
+.node {
+  border: 1px solid var(--line-2); border-radius: 14px; background: var(--panel-solid);
+  display: flex; flex-direction: column; min-width: 0;
+  transition: border-color .5s, box-shadow .5s;
+}
+.node.active { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(34, 225, 255, .25), 0 0 50px -10px rgba(34, 225, 255, .35); }
+.node.keyed { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(255, 194, 75, .25), 0 0 50px -10px rgba(255, 194, 75, .4); }
+.node-h { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.node-h .ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: rgba(34, 225, 255, .08); color: var(--cyan); flex: none; }
+.node-h .ico svg { width: 17px; height: 17px; }
+.node-h b { display: block; font-size: 15px; line-height: 1.2; }
+.node-h small { display: block; font: 11.5px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-b { padding: 12px; display: grid; gap: 10px; flex: 1; align-content: start; }
+
+.pane { border-radius: 10px; border: 1px solid var(--line); background: #070b15; overflow: hidden; transition: border-color .5s, opacity .5s; }
+.pane-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); font: 11px var(--mono); color: var(--dim); }
+.tag { padding: 1px 7px; border-radius: 5px; font: 600 10.5px var(--mono); letter-spacing: .03em; transition: all .5s; white-space: nowrap; }
+.tag.plain { color: var(--lime); background: rgba(92, 242, 160, .1); }
+.tag.cipher { color: var(--violet); background: rgba(155, 107, 255, .14); }
+.tag.none { color: var(--dim); background: rgba(255, 255, 255, .04); }
+.file { margin: 0; padding: 10px; font: 12px/1.7 var(--mono); min-height: 72px; white-space: pre; overflow: hidden; transition: color .5s; }
+.file.plain { color: var(--lime); text-shadow: 0 0 12px rgba(92, 242, 160, .25); }
+.file.cipher { color: var(--violet); text-shadow: 0 0 12px rgba(155, 107, 255, .3); }
+.file.none { color: #29324b; }
+.pane.ghost { opacity: .5; }
+
+.keys { font: 11.5px/1.9 var(--mono); color: var(--muted); padding: 8px 10px; }
+.keys div { display: flex; align-items: center; gap: 8px; transition: color .4s; }
+.keys div::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--amber); opacity: .6; }
+.keys .hot { color: var(--amber); }
+
+.xf {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px;
+  border: 1px dashed var(--line-2); color: var(--dim); transition: all .5s;
+}
+.xf > svg { width: 16px; height: 16px; flex: none; transition: transform .6s var(--ease); }
+.xf div { min-width: 0; flex: 1; }
+.xf b { display: block; font: 600 11.5px var(--mono); }
+.xf small { display: block; font: 10.5px var(--mono); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xf .dn { font: 14px var(--mono); opacity: .6; }
+.xf.enc { border-style: solid; border-color: rgba(155, 107, 255, .55); color: var(--violet); background: rgba(155, 107, 255, .07); }
+.xf.locked { border-style: solid; border-color: rgba(255, 79, 163, .45); color: var(--pink); background: rgba(255, 79, 163, .05); }
+.xf.key { border-style: solid; border-color: rgba(255, 194, 75, .6); color: var(--amber); background: rgba(255, 194, 75, .07); }
+.xf.key > svg { transform: rotate(-30deg) scale(1.15); }
+.xf.dec { border-style: solid; border-color: rgba(92, 242, 160, .5); color: var(--lime); background: rgba(92, 242, 160, .06); }
+
+.wire { position: relative; display: flex; align-items: center; justify-content: center; }
+.wire::before {
+  content: ""; position: absolute; left: 6px; right: 6px; top: 50%; height: 2px;
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 12px);
+  background-size: 24px 2px;
+}
+.wire.flow::before { background: repeating-linear-gradient(90deg, var(--cyan) 0 6px, transparent 6px 12px); background-size: 24px 2px; animation: dash .6s linear infinite; opacity: .8; }
+@keyframes dash { to { background-position: 24px 0; } }
+.wire .lbl { position: absolute; top: calc(50% + 12px); font: 11px var(--mono); color: var(--dim); white-space: nowrap; transition: color .4s; }
+.wire.flow .lbl { color: var(--cyan); }
+.packet {
+  position: absolute; top: 50%; left: 0; width: 34px; height: 24px; margin-top: -12px;
+  border-radius: 7px; display: grid; place-items: center;
+  background: var(--violet); color: #fff;
+  box-shadow: 0 0 24px var(--violet), 0 0 2px #fff inset;
+  opacity: 0; pointer-events: none;
+}
+.packet svg { width: 13px; height: 13px; }
+.packet.go { animation: travel 1.2s var(--ease) forwards; }
+@keyframes travel {
+  0% { left: 0; opacity: 0; transform: scale(.6); }
+  15% { opacity: 1; transform: scale(1); }
+  85% { opacity: 1; transform: scale(1); }
+  100% { left: calc(100% - 34px); opacity: 0; transform: scale(.6); }
+}
+
+.shield { position: absolute; top: 10px; right: 10px; }
+
+.controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 26px; flex-wrap: wrap; }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.step {
+  flex: 1; min-width: 112px; text-align: left; cursor: pointer;
+  padding: 10px 12px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .02); color: var(--muted);
+  font: 12.5px var(--mono); position: relative; overflow: hidden;
+  transition: border-color .3s, color .3s, background .3s;
+}
+.step b { display: block; font: 600 11px var(--mono); color: var(--dim); margin-bottom: 2px; transition: color .3s; }
+.step::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--grad); }
+.step.done { color: var(--text); }
+.step.done b { color: var(--cyan); }
+.step.now { border-color: var(--cyan); background: rgba(34, 225, 255, .06); color: var(--text); }
+.step.now b { color: var(--cyan); }
+.step.now::after { animation: fill var(--dur, 2.8s) linear forwards; }
+.step.done::after { width: 100%; }
+.steps.paused .step.now::after { animation-play-state: paused; }
+@keyframes fill { to { width: 100%; } }
+.ctrl { display: flex; gap: 8px; }
+.icon-btn { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--line-2); background: rgba(255,255,255,.03); color: var(--text); cursor: pointer; transition: all .25s; }
+.icon-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.icon-btn svg { width: 18px; height: 18px; }
+.caption { margin-top: 18px; min-height: 54px; font-size: 17px; color: var(--muted); transition: opacity .35s; }
+.caption code { color: var(--cyan); font-size: .9em; }
+.caption strong { color: var(--text); font-weight: 600; }
+
+/* ---------- features ---------- */
+.feats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 48px; }
+.feat { padding: 22px; }
+.feat .fi { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 16px; }
+.feat .fi svg { width: 20px; height: 20px; }
+.feat h3 { font-size: 17px; }
+.feat p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+/* ---------- get started ---------- */
+.start { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 44px; counter-reset: s; }
+.sc { padding: 24px; display: flex; flex-direction: column; gap: 12px; position: relative; min-width: 0; }
+.sc .n { font: 700 12px var(--mono); color: var(--cyan); letter-spacing: .1em; }
+.sc p { margin: 0; color: var(--muted); font-size: 15px; }
+.code {
+  position: relative; border-radius: 10px; border: 1px solid var(--line);
+  background: #060a13; margin-top: auto;
+}
+.code pre { margin: 0; padding: 14px 14px; font-size: 13px; line-height: 1.8; overflow-x: auto; }
+.code .c { color: var(--dim); }
+.code .k { color: var(--cyan); }
+.copy {
+  position: absolute; top: 8px; right: 8px; padding: 4px 9px; border-radius: 7px;
+  border: 1px solid var(--line-2); background: var(--panel-solid); color: var(--muted);
+  font: 11px var(--mono); cursor: pointer; opacity: 0; transition: opacity .2s, color .2s, border-color .2s;
+}
+.code:hover .copy, .copy:focus-visible { opacity: 1; }
+.copy:hover { color: var(--cyan); border-color: var(--cyan); }
+.copy.ok { color: var(--lime); border-color: var(--lime); opacity: 1; }
+
+.cmds { margin-top: 26px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 32px; padding: 10px 24px; }
+.cmd { display: grid; grid-template-columns: 150px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; transition: padding-left .3s var(--ease); }
+.cmd:hover { padding-left: 6px; }
+.cmd code { color: var(--cyan); font-size: 13.5px; }
+.cmd span { color: var(--muted); }
+.cmds .cmd:nth-last-child(-n+2) { border-bottom: 0; }
+.more { margin-top: 22px; display: flex; justify-content: center; }
+
+/* ---------- how it works ---------- */
+.hiw { display: grid; gap: 22px; margin-top: 48px; }
+.blk { padding: 30px; overflow: hidden; }
+.blk-h { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; align-items: baseline; margin-bottom: 22px; }
+.blk-h h3 { margin: 0; }
+.blk-h .no { font: 700 13px var(--mono); color: var(--violet); }
+.blk-h p { grid-column: 1 / -1; margin: 0; color: var(--muted); max-width: 760px; }
+.blk-h p code, .blk p code, .two p code { color: var(--text); background: rgba(255,255,255,.05); padding: 1px 6px; border-radius: 5px; font-size: .88em; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+
+/* pipeline */
+.pipe { display: flex; align-items: stretch; gap: 0; overflow: hidden; }
+.pipe .st { flex: 1; min-width: 0; padding: 14px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: #080c17; text-align: center; transition: border-color .4s, transform .4s var(--ease); }
+.pipe .st:hover { transform: translateY(-3px); border-color: var(--cyan); }
+.pipe .st b { display: block; font: 600 13px var(--mono); }
+.pipe .st small { display: block; font: 11.5px var(--mono); color: var(--dim); margin-top: 4px; }
+.pipe .ar { width: 72px; flex: none; position: relative; display: flex; align-items: center; justify-content: center; }
+.pipe .ar::before { content: ""; position: absolute; left: 4px; right: 4px; height: 2px; top: 50%; background: var(--line-2); }
+.pipe .ar i { position: absolute; top: 50%; left: 4px; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; animation: pulse-x 2.4s linear infinite; }
+.pipe .ar span { position: absolute; top: calc(50% + 8px); font: 10px var(--mono); white-space: nowrap; }
+@keyframes pulse-x { 0% { left: 4px; opacity: 0; } 15%, 85% { opacity: 1; } 100% { left: calc(100% - 12px); opacity: 0; } }
+
+/* key derivation diagram */
+.kdf { display: grid; gap: 14px; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.chip {
+  font: 500 13px var(--mono); padding: 9px 13px; border-radius: 9px;
+  border: 1px solid var(--line-2); background: #080c17; white-space: nowrap;
+  transition: transform .3s var(--ease), box-shadow .3s, border-color .3s;
+}
+.chip:hover { transform: translateY(-2px); }
+.chip.k { color: var(--amber); border-color: rgba(255, 194, 75, .4); }
+.chip.k:hover { box-shadow: 0 0 24px -4px rgba(255, 194, 75, .5); }
+.chip.p { color: var(--lime); border-color: rgba(92, 242, 160, .35); }
+.chip.c { color: var(--violet); border-color: rgba(155, 107, 255, .45); }
+.chip.c:hover { box-shadow: 0 0 24px -4px rgba(155, 107, 255, .6); }
+.chip.f { color: var(--cyan); border-color: rgba(34, 225, 255, .35); }
+.chip.f:hover { box-shadow: 0 0 24px -4px rgba(34, 225, 255, .5); }
+.arr { color: var(--dim); font: 14px var(--mono); }
+.note { font-size: 14px; color: var(--muted); margin: 6px 0 0; }
+
+/* byte layout */
+.bytes { display: flex; height: 64px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line-2); margin-top: 6px; }
+.seg { position: relative; display: flex; flex-direction: column; justify-content: center; padding: 0 12px; min-width: 0; transition: filter .3s, flex-grow .5s var(--ease); cursor: default; }
+.seg:hover { filter: brightness(1.35); }
+.seg b { font: 600 12px var(--mono); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg small { font: 11px var(--mono); color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg.m { flex: 8 1 0; background: linear-gradient(180deg, rgba(34,225,255,.35), rgba(34,225,255,.15)); }
+.seg.n { flex: 12 1 0; background: linear-gradient(180deg, rgba(255,194,75,.35), rgba(255,194,75,.14)); }
+.seg.x { flex: 36 1 0; background: linear-gradient(180deg, rgba(155,107,255,.4), rgba(155,107,255,.15)); }
+.seg.t { flex: 16 1 0; background: linear-gradient(180deg, rgba(255,79,163,.38), rgba(255,79,163,.14)); }
+.hex { margin-top: 14px; font: 12.5px/1.8 var(--mono); color: var(--muted); padding: 12px 14px; border-radius: 10px; background: #060a13; border: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+.hex .m { color: var(--cyan); } .hex .n { color: var(--amber); } .hex .x { color: var(--violet); } .hex .t { color: var(--pink); }
+
+/* key fan-out */
+.fan { display: grid; grid-template-columns: auto 1fr; gap: 0 28px; align-items: center; }
+.master { padding: 18px 20px; border-radius: 14px; border: 1px solid rgba(255,194,75,.5); background: rgba(255,194,75,.06); text-align: center; box-shadow: 0 0 50px -16px rgba(255,194,75,.6); animation: glow 3s ease-in-out infinite; }
+.master svg { width: 30px; height: 30px; color: var(--amber); }
+.master b { display: block; font: 600 14px var(--mono); color: var(--amber); margin-top: 6px; }
+.master small { font: 11px var(--mono); color: var(--muted); }
+@keyframes glow { 50% { box-shadow: 0 0 70px -10px rgba(255,194,75,.75); } }
+.boxes { display: grid; gap: 10px; position: relative; }
+.box { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: #080c17; position: relative; transition: transform .35s var(--ease), border-color .35s; min-width: 0; }
+.box:hover { transform: translateX(6px); border-color: var(--amber); }
+.box::before { content: ""; position: absolute; right: 100%; top: 50%; width: 28px; height: 1px; background: linear-gradient(90deg, transparent, var(--amber)); }
+.box svg { width: 18px; height: 18px; color: var(--amber); flex: none; }
+.box b { font: 600 13px var(--mono); }
+.box small { margin-left: auto; font: 11px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tree { font: 12.5px/1.85 var(--mono); color: var(--muted); padding: 16px 18px; border-radius: 12px; background: #060a13; border: 1px solid var(--line); overflow-x: auto; margin: 0; }
+.tree .d { color: var(--cyan); } .tree .a { color: var(--amber); } .tree .c { color: var(--dim); } .tree .v { color: var(--violet); }
+
+/* protocol log */
+.proto { display: grid; gap: 8px; font: 12.5px var(--mono); }
+.msg { display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: center; opacity: 0; transform: translateX(-12px); transition: opacity .5s var(--ease), transform .5s var(--ease); }
+.proto.in .msg { opacity: 1; transform: none; }
+.msg .who { text-align: right; color: var(--dim); font-size: 11.5px; }
+.msg .say { padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); background: #080c17; color: var(--muted); overflow-x: auto; white-space: nowrap; }
+.msg.k .say { border-color: rgba(34,225,255,.35); color: var(--cyan); }
+.msg.g .who { color: #f1502f; } .msg.k .who { color: var(--cyan); }
+
+/* tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th, .tbl td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl th { font: 600 11.5px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.tbl td code { font-size: 12.5px; color: var(--cyan); }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tbody tr { transition: background .25s; }
+.tbl tbody tr:hover { background: rgba(255,255,255,.02); }
+.ok { color: var(--lime); } .no { color: var(--pink); }
+.scroll-x { overflow-x: auto; }
+
+.threat ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.threat li { display: flex; gap: 12px; color: var(--muted); font-size: 15px; }
+.threat li svg { width: 18px; height: 18px; flex: none; margin-top: 3px; }
+.threat li b { color: var(--text); font-weight: 600; }
+
+/* ---------- final cta + footer ---------- */
+.final { text-align: center; padding: 72px 24px; border-radius: 22px; position: relative; overflow: hidden; border: 1px solid var(--line-2); background: radial-gradient(ellipse at 50% 0, rgba(155,107,255,.22), transparent 70%), var(--panel); }
+.final h2 { margin-top: 0; }
+.final .cta { justify-content: center; margin-top: 28px; }
+.final .sub { margin-inline: auto; }
+
+footer { padding: 48px 0 56px; border-top: 1px solid var(--line); margin-top: 96px; }
+footer .wrap { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; color: var(--muted); font-size: 14.5px; }
+.built { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.built a { color: var(--text); font-weight: 600; border-bottom: 1px solid transparent; transition: border-color .25s, color .25s; }
+.built a:hover { color: var(--cyan); border-color: var(--cyan); }
+.heart { color: var(--pink); display: inline-block; animation: beat 1.6s ease-in-out infinite; }
+@keyframes beat { 15% { transform: scale(1.25); } 30% { transform: scale(1); } }
+.flinks { display: flex; gap: 18px; font: 13px var(--mono); }
+.flinks a { transition: color .25s; } .flinks a:hover { color: var(--cyan); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1000px) {
+  .hero .wrap { grid-template-columns: 1fr; }
+  .feats { grid-template-columns: repeat(2, 1fr); }
+  .start { grid-template-columns: 1fr; }
+  .two { grid-template-columns: 1fr; }
+  .lanes { grid-template-columns: 1fr; }
+  .wire { height: 64px; }
+  .wire::before { left: 50%; right: auto; top: 6px; bottom: 6px; width: 2px; height: auto; margin-left: -1px;
+    background: repeating-linear-gradient(180deg, var(--line-2) 0 6px, transparent 6px 12px); background-size: 2px 24px; }
+  .wire.flow::before { background: repeating-linear-gradient(180deg, var(--cyan) 0 6px, transparent 6px 12px); background-size: 2px 24px; animation: dashv .6s linear infinite; }
+  .wire .lbl { top: 50%; left: calc(50% + 14px); transform: translateY(-50%); }
+  .packet { top: 0; left: 50%; margin: 0 0 0 -17px; }
+  .packet.go { animation: travelv 1.2s var(--ease) forwards; }
+  .pipe { flex-direction: column; }
+  .pipe .ar { width: auto; height: 36px; }
+  .pipe .ar::before { left: 50%; right: auto; top: 4px; bottom: 4px; width: 2px; height: auto; }
+  .pipe .ar i { left: 50%; margin: 0 0 0 -4px; top: 4px; animation-name: pulse-y; }
+  .pipe .ar span { top: 50%; left: calc(50% + 12px); transform: translateY(-50%); }
+}
+@keyframes dashv { to { background-position: 0 24px; } }
+@keyframes travelv {
+  0% { top: 0; opacity: 0; transform: scale(.6); }
+  15%, 85% { opacity: 1; transform: scale(1); }
+  100% { top: calc(100% - 24px); opacity: 0; transform: scale(.6); }
+}
+@keyframes pulse-y { 0% { top: 4px; opacity: 0; } 15%, 85% { opacity: 1; } 100% { top: calc(100% - 12px); opacity: 0; } }
+@media (max-width: 720px) {
+  .links a.l { display: none; }
+  .hero { padding-top: 56px; }
+  section { padding: 72px 0; }
+  .stage { padding: 16px; }
+  .blk { padding: 20px; }
+  .feats { grid-template-columns: 1fr; }
+  .cmds { grid-template-columns: 1fr; padding: 6px 18px; }
+  .cmds .cmd:nth-last-child(2) { border-bottom: 1px solid var(--line); }
+  .cmd { grid-template-columns: 1fr; gap: 2px; }
+  .fan { grid-template-columns: 1fr; gap: 18px; }
+  .box::before { display: none; }
+  .seg small { display: none; }
+  .seg { padding: 0 6px; }
+  .seg b { font-size: 10.5px; }
+  .msg { grid-template-columns: 1fr; gap: 4px; }
+  .msg .who { text-align: left; }
+  .steps .step { min-width: calc(50% - 3px); }
+  .term pre { min-height: 0; font-size: 12px; }
+  .copy { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><div class="grid"></div><div class="orb a"></div><div class="orb b"></div></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14.5 8.5l2.5 2.5"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
+    <symbol id="i-gh" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 3-10.5 5.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2Z"/><path d="M4 21V5M8 7h7"/></symbol>
+  </defs>
+</svg>
+
+<nav class="top" id="nav">
+  <div class="wrap">
+    <a href="#" class="logo" aria-label="kis home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#22e1ff"/><stop offset="1" stop-color="#9b6bff"/></linearGradient></defs><path d="M10 14v-3a6 6 0 0 1 12 0v3" stroke="url(#lg)" stroke-width="2.6" fill="none" stroke-linecap="round"/><rect x="6.5" y="14" width="19" height="13" rx="3.5" fill="url(#lg)"/><circle cx="16" cy="20.5" r="2" fill="#05070d"/></svg>
+      kis <small>keep-in-secret</small>
+    </a>
+    <div class="links">
+      <a class="l" href="#flow">Flow</a>
+      <a class="l" href="#start">Get started</a>
+      <a class="l" href="#how">How it works</a>
+      <a class="btn sm" href="https://github.com/juanfraherrero/keep-in-secret"><svg><use href="#i-gh"/></svg>GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= HERO ================= -->
+<header class="hero">
+  <div class="wrap">
+    <div class="reveal in">
+      <span class="pill"><span class="dot"></span>git-native · AES-256-GCM · age</span>
+      <h1>Commit your <span class="grad">.env</span>.<br>Keep it secret.</h1>
+      <p class="lead">kis encrypts your secrets inside git itself. Keep using plain <code>git add</code>, <code>push</code> and <code>pull</code>. Your team gets the plaintext, and the server only ever stores ciphertext.</p>
+      <div class="cta">
+        <a class="btn primary" href="#start">Get started <svg><use href="#i-arrow"/></svg></a>
+        <a class="btn" href="https://github.com/juanfraherrero/keep-in-secret"><svg><use href="#i-gh"/></svg>View on GitHub</a>
+      </div>
+      <div class="install">
+        <span class="p">$</span>
+        <code id="installCmd">go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest</code>
+        <button class="btn sm" data-copy="#installCmd" type="button">Copy</button>
+      </div>
+    </div>
+    <div class="term reveal in d2" aria-label="Terminal demo">
+      <div class="bar"><i></i><i></i><i></i><span>~/acme/api — zsh</span></div>
+      <pre id="typed" aria-live="off"></pre>
+    </div>
+  </div>
+</header>
+
+<!-- ================= FLOW ================= -->
+<section id="flow">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">The journey of a secret</div>
+      <h2>Plaintext on laptops.<br><span class="grad">Ciphertext everywhere else.</span></h2>
+      <p class="sub">Follow one <code class="mono">.env</code> from Juan's laptop to Ana's. Git does the moving, and kis encrypts on the way in and decrypts on the way out.</p>
+      <div class="legend">
+        <span><i style="background:var(--lime)"></i>plaintext</span>
+        <span><i style="background:var(--violet)"></i>ciphertext</span>
+        <span><i style="background:var(--amber)"></i>keys</span>
+        <span><i style="background:var(--cyan)"></i>git transport</span>
+      </div>
+    </div>
+
+    <div class="stage reveal d1" id="stage">
+      <div class="lanes">
+        <!-- owner -->
+        <div class="node" id="nOwner">
+          <div class="node-h"><span class="ico"><svg><use href="#i-laptop"/></svg></span><div><b>Juan · owner</b><small>~/acme/api</small></div></div>
+          <div class="node-b">
+            <div class="pane">
+              <div class="pane-h"><span>working tree · .env</span><span class="tag plain">plaintext</span></div>
+              <pre class="file plain" id="fOwner"></pre>
+            </div>
+            <div class="xf" id="xOwner"><svg><use href="#i-lock"/></svg><div><b></b><small></small></div><span class="dn">↓</span></div>
+            <div class="pane" id="pBlob">
+              <div class="pane-h"><span>git object · .env</span><span class="tag none" id="tBlob">empty</span></div>
+              <pre class="file none" id="fBlob"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="wire" id="w1"><span class="packet" id="k1"><svg><use href="#i-lock"/></svg></span><span class="lbl">git push</span></div>
+
+        <!-- server -->
+        <div class="node" id="nServer">
+          <div class="node-h"><span class="ico"><svg><use href="#i-server"/></svg></span><div><b>Remote</b><small>github.com/acme/api</small></div></div>
+          <div class="node-b">
+            <div class="pane">
+              <div class="pane-h"><span>.env</span><span class="tag none" id="tServer">empty</span></div>
+              <pre class="file none" id="fServer"></pre>
+            </div>
+            <div class="pane">
+              <div class="pane-h"><span>.kis/keys/</span><span class="tag cipher">age</span></div>
+              <div class="keys"><div>juan.age</div><div id="kAna">ana.age</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wire" id="w2"><span class="packet" id="k2"><svg><use href="#i-lock"/></svg></span><span class="lbl">git pull</span></div>
+
+        <!-- partner -->
+        <div class="node" id="nPartner">
+          <div class="node-h"><span class="ico"><svg><use href="#i-laptop"/></svg></span><div><b>Ana · partner</b><small>~/code/api (clone)</small></div></div>
+          <div class="node-b">
+            <div class="pane">
+              <div class="pane-h"><span>git object · .env</span><span class="tag none" id="tPObj">empty</span></div>
+              <pre class="file none" id="fPObj"></pre>
+            </div>
+            <div class="xf" id="xPartner"><svg><use href="#i-key"/></svg><div><b></b><small></small></div><span class="dn">↓</span></div>
+            <div class="pane">
+              <div class="pane-h"><span>working tree · .env</span><span class="tag none" id="tPartner">empty</span></div>
+              <pre class="file none" id="fPartner"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="steps" id="steps"></div>
+        <div class="ctrl">
+          <button class="icon-btn" id="play" type="button" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
+          <button class="icon-btn" id="replay" type="button" aria-label="Replay"><svg><use href="#i-replay"/></svg></button>
+        </div>
+      </div>
+      <p class="caption" id="caption"></p>
+    </div>
+
+    <div class="feats">
+      <div class="card hov feat reveal">
+        <div class="fi" style="background:rgba(34,225,255,.1);color:var(--cyan)"><svg><use href="#i-git"/></svg></div>
+        <h3>Just git</h3><p>Plain add, commit, push and pull. kis runs inside git as a filter, with no extra steps in your workflow.</p>
+      </div>
+      <div class="card hov feat reveal d1">
+        <div class="fi" style="background:rgba(155,107,255,.12);color:var(--violet)"><svg><use href="#i-lock"/></svg></div>
+        <h3>Zero plaintext upstream</h3><p>Your history and your remote only ever see authenticated AES-256-GCM ciphertext.</p>
+      </div>
+      <div class="card hov feat reveal d2">
+        <div class="fi" style="background:rgba(255,194,75,.1);color:var(--amber)"><svg><use href="#i-users"/></svg></div>
+        <h3>Share with a key</h3><p>Add partners by age key, SSH key, or <code class="mono">github:user</code>. Revoking someone rotates the repository key.</p>
+      </div>
+      <div class="card hov feat reveal d3">
+        <div class="fi" style="background:rgba(92,242,160,.1);color:var(--lime)"><svg><use href="#i-shield"/></svg></div>
+        <h3>Fails closed</h3><p>No key? <code class="mono">git add</code> refuses, and a pre-commit check blocks any plaintext that slips through.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= GET STARTED ================= -->
+<section id="start">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">Get started</div>
+      <h2>Three commands. <span class="grad">That's the whole setup.</span></h2>
+      <p class="sub">Install once per machine, like git-lfs. Nothing executable ever lives in the repository.</p>
+    </div>
+    <div class="start">
+      <div class="card hov sc reveal">
+        <span class="n">01 · INSTALL</span>
+        <h3>Everyone</h3>
+        <p>You need Go and git. Run <code class="mono">make install</code> from a clone to also get <code class="mono">git kis</code>.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">go install</span> github.com/juanfraherrero/keep-in-secret/cmd/kis@latest</pre></div>
+      </div>
+      <div class="card hov sc reveal d1">
+        <span class="n">02 · OWNER</span>
+        <h3>Encrypt the repo, add a partner</h3>
+        <p><code class="mono">init</code> creates <code class="mono">.gitencrypt</code> (<code class="mono">.env</code>, <code class="mono">.env.*</code>) and your key, and encrypts what matches.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis init</span>
+<span class="k">kis add</span> ana github:ana   <span class="c"># or age1… / ana.pub</span>
+git commit -m "Set up kis" &amp;&amp; git push</pre></div>
+      </div>
+      <div class="card hov sc reveal d2">
+        <span class="n">03 · PARTNER</span>
+        <h3>Send a key, unlock</h3>
+        <p>Make a key, send the public half to the owner, then unlock after cloning. An existing SSH key works too.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis keygen</span>        <span class="c"># prints age1… → send it</span>
+git clone … &amp;&amp; cd …
+<span class="k">kis unlock</span>        <span class="c"># .env is now plaintext</span></pre></div>
+      </div>
+    </div>
+
+    <div class="card cmds reveal">
+      <div class="cmd"><code>kis init</code><span>Set up encryption in the repo (<code class="mono">--ssh</code> to use your SSH key)</span></div>
+      <div class="cmd"><code>kis keygen</code><span>Create your personal age key and print the public key</span></div>
+      <div class="cmd"><code>kis add NAME KEY</code><span>Give someone access: <code class="mono">age1…</code>, <code class="mono">github:USER</code> or <code class="mono">FILE.pub</code></span></div>
+      <div class="cmd"><code>kis remove NAME</code><span>Revoke access and rotate the master key</span></div>
+      <div class="cmd"><code>kis unlock</code><span>Decrypt after cloning; wires up the git filters and hook</span></div>
+      <div class="cmd"><code>kis lock</code><span>Forget the key here and turn files back into ciphertext</span></div>
+      <div class="cmd"><code>kis rotate</code><span>New master key, re-encrypt everything</span></div>
+      <div class="cmd"><code>kis sync</code><span>Apply <code class="mono">.gitencrypt</code> edits to <code class="mono">.gitattributes</code></span></div>
+      <div class="cmd"><code>kis status</code><span>Lock state, partners, encrypted files</span></div>
+      <div class="cmd"><code>kis pubkey</code><span>Print the public keys found on this machine</span></div>
+    </div>
+    <div class="more reveal"><a class="btn" href="https://github.com/juanfraherrero/keep-in-secret#readme"><svg><use href="#i-book"/></svg>Read the full README</a></div>
+  </div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section id="how">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">How it works</div>
+      <h2>Under the hood: <span class="grad">git filters + SIV-style AEAD + age.</span></h2>
+      <p class="sub">About 2,800 lines of Go, built on the standard library's crypto plus <code class="mono">filippo.io/age</code>. Here is every layer.</p>
+    </div>
+
+    <div class="hiw">
+      <!-- 1 pipeline -->
+      <div class="card blk reveal">
+        <div class="blk-h"><span class="no">01</span><h3>Git filters do the moving</h3>
+          <p><code>.gitencrypt</code> compiles into a managed block in <code>.gitattributes</code> (<code>.env filter=kis diff=kis</code>). Git then pipes those files through kis whenever content crosses between the working tree and the object database.</p></div>
+        <div class="pipe">
+          <div class="st"><b class="ok">.env</b><small>working tree</small></div>
+          <div class="ar"><i style="background:var(--cyan);box-shadow:0 0 10px var(--cyan)"></i><span style="color:var(--cyan)">git add</span></div>
+          <div class="st" style="border-color:rgba(155,107,255,.45)"><b style="color:var(--violet)">clean</b><small>encrypt</small></div>
+          <div class="ar"><i style="background:var(--violet);box-shadow:0 0 10px var(--violet);animation-delay:.4s"></i></div>
+          <div class="st"><b style="color:var(--violet)">blob</b><small>.git/objects</small></div>
+          <div class="ar"><i style="background:var(--violet);box-shadow:0 0 10px var(--violet);animation-delay:.8s"></i><span style="color:var(--cyan)">push/pull</span></div>
+          <div class="st"><b style="color:var(--violet)">remote</b><small>ciphertext only</small></div>
+          <div class="ar"><i style="background:var(--violet);box-shadow:0 0 10px var(--violet);animation-delay:1.2s"></i><span style="color:var(--cyan)">checkout</span></div>
+          <div class="st" style="border-color:rgba(92,242,160,.4)"><b class="ok">smudge</b><small>decrypt</small></div>
+          <div class="ar"><i style="background:var(--lime);box-shadow:0 0 10px var(--lime);animation-delay:1.6s"></i></div>
+          <div class="st"><b class="ok">.env</b><small>working tree</small></div>
+        </div>
+      </div>
+
+      <div class="two">
+        <!-- 2 kdf -->
+        <div class="card blk reveal">
+          <div class="blk-h"><span class="no">02</span><h3>Deterministic, authenticated encryption</h3>
+            <p>Git compares content by hash, so the same plaintext must always give the same bytes. Otherwise every secret would show as modified forever. The nonce is therefore <em>derived</em> from the content.</p></div>
+          <div class="kdf">
+            <div class="row"><span class="chip k">master key · 32B</span><span class="arr">→</span><span class="chip f">HKDF-SHA256</span><span class="arr">→</span><span class="chip k">encKey</span><span class="chip k">macKey</span></div>
+            <div class="row"><span class="chip p">plaintext</span><span class="arr">→</span><span class="chip f">HMAC(macKey)[:12]</span><span class="arr">=</span><span class="chip k">nonce</span></div>
+            <div class="row"><span class="chip f">AES-256-GCM(encKey, nonce, aad=Magic)</span><span class="arr">→</span><span class="chip c">ciphertext ‖ tag</span></div>
+          </div>
+          <p class="note">A nonce repeats only when the plaintext is identical, and then the output is identical too, so GCM's nonce-reuse problem never comes up. On decrypt, kis recomputes the HMAC and rejects the file unless it matches (<code>hmac.Equal</code>).</p>
+        </div>
+
+        <!-- 3 file format -->
+        <div class="card blk reveal d1">
+          <div class="blk-h"><span class="no">03</span><h3>The blob format</h3>
+            <p>Every encrypted file is self-describing. The leading <code>NUL</code> byte makes git treat it as binary, so it never prints a line diff of noise. <code>textconv</code> shows you the real diff when you're unlocked.</p></div>
+          <div class="bytes">
+            <div class="seg m" title="Magic header, also used as AAD"><b>Magic</b><small>8 bytes</small></div>
+            <div class="seg n" title="Synthetic nonce"><b>nonce</b><small>12 bytes</small></div>
+            <div class="seg x" title="AES-256-GCM ciphertext"><b>ciphertext</b><small>n bytes</small></div>
+            <div class="seg t" title="GCM authentication tag"><b>tag</b><small>16 bytes</small></div>
+          </div>
+          <div class="hex" id="hex"></div>
+          <p class="note">Encrypting is idempotent: content that already carries the header passes straight through the clean filter.</p>
+        </div>
+      </div>
+
+      <!-- 4 key wrapping -->
+      <div class="card blk reveal">
+        <div class="blk-h"><span class="no">04</span><h3>One repository key, one lockbox per partner</h3>
+          <p>A random master key encrypts the files. That key is then encrypted with <a href="https://age-encryption.org" style="color:var(--cyan)">age</a> for each partner's public key (X25519, or SSH ed25519/RSA) and committed, ASCII-armored. Only that partner's private key can open their box. <code>kis unlock</code> caches the master key in <code>.git/kis/key</code>, which is never committed.</p></div>
+        <div class="two" style="align-items:center">
+          <div class="fan">
+            <div class="master"><svg><use href="#i-key"/></svg><b>master key</b><small>32 random bytes</small></div>
+            <div class="boxes">
+              <div class="box"><svg><use href="#i-lock"/></svg><b>juan.age</b><small>age1qz8…x4k</small></div>
+              <div class="box"><svg><use href="#i-lock"/></svg><b>ana.age</b><small>ssh-ed25519 AAAA…</small></div>
+              <div class="box"><svg><use href="#i-lock"/></svg><b>leo.age</b><small>github:leo → 2 keys</small></div>
+            </div>
+          </div>
+<pre class="tree"><span class="d">.kis/</span>
+├── config.toml      <span class="c"># default_key = "age" | "ssh"</span>
+├── recipients.toml  <span class="c"># name → [public keys]</span>
+└── <span class="d">keys/</span>
+    ├── <span class="a">juan.age</span>     <span class="c"># master key, for juan</span>
+    └── <span class="a">ana.age</span>      <span class="c"># master key, for ana</span>
+<span class="d">.git/kis/</span><span class="v">key</span>         <span class="c"># local cache, 0600, never pushed</span></pre>
+        </div>
+        <p class="note" style="margin-top:18px"><b style="color:var(--text)">Revoke:</b> <code>kis remove ana</code> generates a new master key, re-wraps it for everyone who's left, re-encrypts every secret (<code>git add --renormalize</code>) and deletes <code>ana.age</code>. Remaining partners pull and run <code>kis unlock</code> again.</p>
+      </div>
+
+      <div class="two">
+        <!-- 5 protocol -->
+        <div class="card blk reveal">
+          <div class="blk-h"><span class="no">05</span><h3>One process, not one per file</h3>
+            <p>kis speaks git's <em>long-running filter process</em> protocol (v2, pkt-line framing). Git starts it once per command and streams every file through it, and the key is loaded only once.</p></div>
+          <div class="proto" id="proto">
+            <div class="msg g"><span class="who">git →</span><span class="say">git-filter-client · version=2 · 0000</span></div>
+            <div class="msg k"><span class="who">kis →</span><span class="say">git-filter-server · version=2 · 0000</span></div>
+            <div class="msg g"><span class="who">git →</span><span class="say">capability=clean · capability=smudge · 0000</span></div>
+            <div class="msg k"><span class="who">kis →</span><span class="say">capability=clean · capability=smudge · 0000</span></div>
+            <div class="msg g"><span class="who">git →</span><span class="say">command=clean · pathname=.env · 0000 · &lt;content&gt; · 0000</span></div>
+            <div class="msg k"><span class="who">kis →</span><span class="say">status=success · 0000 · \0KIS\0v1\0… · 0000</span></div>
+          </div>
+        </div>
+
+        <!-- 6 fail closed -->
+        <div class="card blk reveal d1">
+          <div class="blk-h"><span class="no">06</span><h3>Fails closed, never loud</h3>
+            <p>The rules are asymmetric on purpose: storing plaintext is never allowed, and reading without a key is never an error.</p></div>
+          <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th></th><th>Unlocked</th><th>Locked</th></tr></thead>
+            <tbody>
+              <tr><td><code>clean</code> · git add</td><td class="ok">encrypt</td><td class="no">refuse: nothing staged</td></tr>
+              <tr><td><code>smudge</code> · checkout</td><td class="ok">decrypt</td><td>pass ciphertext through</td></tr>
+              <tr><td><code>pre-commit</code></td><td colspan="2">blocks plaintext in staged secrets, or a stale <code>.gitattributes</code></td></tr>
+              <tr><td><code>filter.required</code></td><td colspan="2">if kis crashes, git fails rather than storing plaintext</td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7 threat model -->
+      <div class="card blk threat reveal">
+        <div class="blk-h"><span class="no">07</span><h3>Threat model, honestly</h3></div>
+        <div class="two">
+          <ul>
+            <li><svg class="ok"><use href="#i-check"/></svg><span><b>No plaintext in git.</b> Not in objects, history, or the remote.</span></li>
+            <li><svg class="ok"><use href="#i-check"/></svg><span><b>Tamper-evident.</b> GCM tag + nonce re-check reject modified blobs.</span></li>
+            <li><svg class="ok"><use href="#i-check"/></svg><span><b>A clone without a key leaks nothing.</b> You just get ciphertext.</span></li>
+          </ul>
+          <ul>
+            <li><svg class="no"><use href="#i-x"/></svg><span><b>Past commits.</b> Whoever could unlock once can read old history. Rotate the real credentials after removing someone.</span></li>
+            <li><svg class="no"><use href="#i-x"/></svg><span><b>Metadata.</b> File names, sizes, and <em>when</em> a secret changed are visible.</span></li>
+            <li><svg class="no"><use href="#i-x"/></svg><span><b>Endpoints.</b> Secrets are only as safe as the least protected laptop holding a key.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="more reveal"><a class="btn" href="https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/how-it-works.md"><svg><use href="#i-book"/></svg>Full technical deep dive</a></div>
+  </div>
+</section>
+
+<section style="padding-top:24px">
+  <div class="wrap">
+    <div class="final reveal">
+      <div class="eyebrow" style="justify-content:center">Open source</div>
+      <h2>Stop pasting secrets <span class="grad">into Slack.</span></h2>
+      <p class="sub">Put them where your code already lives, encrypted.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/juanfraherrero/keep-in-secret"><svg><use href="#i-gh"/></svg>Star on GitHub</a>
+        <a class="btn" href="https://github.com/juanfraherrero/keep-in-secret#readme"><svg><use href="#i-book"/></svg>README</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="built">
+      <span>Built with <span class="heart">♥</span> by</span>
+      <a href="https://github.com/juanfraherrero">juanfraherrero</a>
+      <span>&amp;</span>
+      <a href="https://claude.com/claude-code">Claude</a>
+    </div>
+    <div class="flinks">
+      <a href="https://github.com/juanfraherrero/keep-in-secret">github</a>
+      <a href="https://github.com/juanfraherrero/keep-in-secret#readme">readme</a>
+      <a href="https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/how-it-works.md">deep dive</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* nav border on scroll */
+  const nav = $('#nav');
+  addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 8), { passive: true });
+
+  /* scroll reveal */
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }), { threshold: .12 });
+  document.querySelectorAll('.reveal, .proto').forEach(el => io.observe(el));
+  document.querySelectorAll('.proto .msg').forEach((m, i) => m.style.transitionDelay = (i * .22 + .2) + 's');
+
+  /* copy buttons */
+  async function copy(text, btn) {
+    try { await navigator.clipboard.writeText(text); } catch (_) { return; }
+    const old = btn.textContent; btn.textContent = 'copied'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = old; btn.classList.remove('ok'); }, 1400);
+  }
+  document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', () => {
+    const lines = b.nextElementSibling.textContent.split('\n').map(l => l.replace(/\s+#.*$/, ''));
+    copy(lines.join('\n'), b);
+  }));
+  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copy($(b.dataset.copy).textContent, b)));
+
+  /* deterministic fake ciphertext: same input → same output, like kis */
+  function hash(str, seed) {
+    let h = 2166136261 ^ seed;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function hexOf(str, len, seed = 7) {
+    let out = '', h = hash(str, seed);
+    while (out.length < len) { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; out += h.toString(16).padStart(8, '0'); }
+    return out.slice(0, len);
+  }
+
+  /* terminal typing */
+  const typed = $('#typed');
+  const script = [
+    ['cmd', 'kis init -y'],
+    ['out', '<span class="t-ok">✓</span> created .gitencrypt (.env, .env.* except examples)'],
+    ['out', '<span class="t-ok">✓</span> created repository key, encrypted for <span class="t-a">juan</span> (age)'],
+    ['out', '<span class="t-ok">✓</span> configured git filters and pre-commit check'],
+    ['out', '<span class="t-ok">✓</span> staged encrypted: .env'],
+    ['cmd', 'kis add ana github:ana'],
+    ['out', '<span class="t-ok">✓</span> added <span class="t-a">ana</span> (1 key(s), ssh)'],
+    ['cmd', 'git commit -qm "secrets, encrypted" && git push -q'],
+    ['cmd', 'git show HEAD:.env | xxd | head -2'],
+    ['out', '<span class="t-v">00000000: 004b 4953 0076 3100 ' + hexOf('n', 4) + ' ' + hexOf('n2', 4) + '  .KIS.v1...</span>'],
+    ['out', '<span class="t-v">00000010: ' + hexOf('a', 4) + ' ' + hexOf('b', 4) + ' ' + hexOf('c', 4) + ' ' + hexOf('d', 4) + '  ........</span>'],
+    ['out', '<span class="t-dim"># the remote never sees a single secret</span>'],
+  ];
+  const PROMPT = '<span class="t-p">❯</span> ';
+  async function typeTerm() {
+    let html = '';
+    const sleep = ms => new Promise(r => setTimeout(r, reduced ? 0 : ms));
+    for (const [kind, text] of script) {
+      if (kind === 'cmd') {
+        for (let i = 0; i <= text.length; i++) {
+          typed.innerHTML = html + PROMPT + esc(text.slice(0, i)) + '<span class="caret"></span>';
+          await sleep(24 + Math.random() * 40);
+        }
+        html += PROMPT + esc(text) + '\n';
+        await sleep(260);
+      } else {
+        html += text + '\n';
+        typed.innerHTML = html + '<span class="caret"></span>';
+        await sleep(140);
+      }
+    }
+    typed.innerHTML = html + PROMPT + '<span class="caret"></span>';
+  }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  typeTerm();
+
+  /* hex dump in format section */
+  $('#hex').innerHTML =
+    '<span class="m">00 4b 49 53 00 76 31 00</span> ' +
+    '<span class="n">' + hexOf('nonce', 24).match(/../g).join(' ') + '</span> ' +
+    '<span class="x">' + hexOf('ct', 30).match(/../g).join(' ') + ' …</span> ' +
+    '<span class="t">' + hexOf('tag', 32).match(/../g).join(' ') + '</span>';
+
+  /* ---------- the flow ---------- */
+  const PLAIN = ['DB_HOST=db.internal', 'DB_PASSWORD=hunter2-prod', 'STRIPE_KEY=sk_live_51Hq…'];
+  const CIPHER = ['␀KIS␀v1␀' + hexOf('nonce', 11)].concat(PLAIN.slice(1).map((l, i) => hexOf(l, l.length, i + 3)));
+  const EMPTY = PLAIN.map(l => '·'.repeat(Math.min(l.length, 20)));
+  const join = a => a.join('\n');
+  const CHARS = '0123456789abcdef#%&@$*+=/<>';
+
+  const el = {
+    fOwner: $('#fOwner'), fBlob: $('#fBlob'), fServer: $('#fServer'), fPartner: $('#fPartner'),
+    tBlob: $('#tBlob'), tServer: $('#tServer'), tPartner: $('#tPartner'),
+    nOwner: $('#nOwner'), nServer: $('#nServer'), nPartner: $('#nPartner'),
+    w1: $('#w1'), w2: $('#w2'), k1: $('#k1'), k2: $('#k2'), kAna: $('#kAna'),
+    fPObj: $('#fPObj'), tPObj: $('#tPObj'), xOwner: $('#xOwner'), xPartner: $('#xPartner'),
+    caption: $('#caption'), steps: $('#steps'), play: $('#play'),
+  };
+  el.fOwner.textContent = join(PLAIN);
+
+  const scrambles = new Map();
+  function setFile(fileEl, tagEl, state, animate) {
+    const target = join(state === 'plain' ? PLAIN : state === 'cipher' ? CIPHER : EMPTY);
+    fileEl.className = 'file ' + state;
+    if (tagEl) { tagEl.className = 'tag ' + state; tagEl.textContent = state === 'plain' ? 'plaintext' : state === 'cipher' ? 'AES-256-GCM' : 'empty'; }
+    cancelAnimationFrame(scrambles.get(fileEl));
+    if (!animate || reduced) { fileEl.textContent = target; return; }
+    const from = fileEl.textContent, start = performance.now(), dur = 900;
+    const frame = now => {
+      const p = Math.min(1, (now - start) / dur);
+      let out = '';
+      for (let i = 0; i < target.length; i++) {
+        const c = target[i];
+        if (c === '\n') { out += c; continue; }
+        const at = (i / target.length) * .7;
+        out += p >= at + .3 ? c : p >= at ? CHARS[(Math.random() * CHARS.length) | 0] : (from[i] && from[i] !== '\n' ? from[i] : ' ');
+      }
+      fileEl.textContent = out;
+      if (p < 1) scrambles.set(fileEl, requestAnimationFrame(frame));
+    };
+    scrambles.set(fileEl, requestAnimationFrame(frame));
+  }
+  let pending = [];
+  const later = (fn, ms) => pending.push(setTimeout(fn, ms));
+  function send(packet, wire) {
+    wire.classList.add('flow');
+    packet.classList.remove('go'); void packet.offsetWidth; packet.classList.add('go');
+  }
+  function setXf(x, cls, title, detail) {
+    x.className = 'xf ' + cls;
+    x.querySelector('b').textContent = title;
+    x.querySelector('small').textContent = detail;
+  }
+  function focus(node, cls = 'active') {
+    [el.nOwner, el.nServer, el.nPartner].forEach(n => n.classList.remove('active', 'keyed'));
+    if (node) node.classList.add(cls);
+  }
+
+  const STEPS = [
+    { key: 'edit', label: 'edit .env', dur: 2600,
+      cap: '<strong>Juan</strong> edits <code>.env</code> as usual. On his laptop it is plain text, as always.',
+      run(a) {
+        setFile(el.fBlob, el.tBlob, 'none', false); setFile(el.fServer, el.tServer, 'none', false);
+        setFile(el.fPObj, el.tPObj, 'none', false); setFile(el.fPartner, el.tPartner, 'none', false);
+        setXf(el.xOwner, '', 'clean filter', 'runs on git add');
+        setXf(el.xPartner, '', 'smudge filter', 'runs on checkout / pull');
+        el.w1.classList.remove('flow'); el.w2.classList.remove('flow'); el.kAna.classList.remove('hot');
+        focus(el.nOwner);
+      } },
+    { key: 'add', label: 'git add', dur: 2800,
+      cap: '<code>git add</code> pipes the file through the kis <strong>clean filter</strong>, which writes AES-256-GCM ciphertext to the git object. The working copy stays plaintext.',
+      run(a) { focus(el.nOwner); setXf(el.xOwner, 'enc', 'clean filter · encrypt', 'AES-256-GCM with the master key'); setFile(el.fBlob, el.tBlob, 'cipher', a); } },
+    { key: 'push', label: 'git push', dur: 2800,
+      cap: '<code>git push</code> uploads only the ciphertext and the wrapped keys. <strong>The server can’t read a thing.</strong>',
+      run(a) {
+        focus(el.nServer); el.w2.classList.remove('flow');
+        if (a && !reduced) { send(el.k1, el.w1); later(() => setFile(el.fServer, el.tServer, 'cipher', true), 900); }
+        else { el.w1.classList.add('flow'); setFile(el.fServer, el.tServer, 'cipher', false); }
+      } },
+    { key: 'pull', label: 'git pull', dur: 3600,
+      cap: '<strong>Ana</strong> pulls the ciphertext git object. She has no key yet, so the smudge filter passes it through and her <code>.env</code> is still unreadable. Nothing leaks and nothing breaks.',
+      run(a) {
+        focus(el.nPartner); el.w1.classList.remove('flow');
+        const locked = () => setXf(el.xPartner, 'locked', 'smudge filter · no key', 'ciphertext passed through');
+        if (a && !reduced) {
+          send(el.k2, el.w2);
+          later(() => setFile(el.fPObj, el.tPObj, 'cipher', true), 900);
+          later(locked, 1500);
+          later(() => setFile(el.fPartner, el.tPartner, 'cipher', true), 1700);
+        } else {
+          el.w2.classList.add('flow'); setFile(el.fPObj, el.tPObj, 'cipher', false); locked(); setFile(el.fPartner, el.tPartner, 'cipher', false);
+        }
+      } },
+    { key: 'unlock', label: 'kis unlock', dur: 5000,
+      cap: '<code>kis unlock</code>: Ana’s private key opens <code>.kis/keys/ana.age</code> and gets the master key. The <strong>smudge filter decrypts</strong> the git object into a plaintext <code>.env</code>. The git object itself stays ciphertext.',
+      run(a) {
+        focus(el.nPartner, 'keyed'); el.w2.classList.remove('flow');
+        el.kAna.classList.add('hot');
+        const key = () => setXf(el.xPartner, 'key', 'kis unlock · key found', 'identity → ana.age → master key');
+        const dec = () => setXf(el.xPartner, 'dec', 'smudge filter · decrypt', 'AES-256-GCM with the master key');
+        if (a && !reduced) {
+          key();
+          later(dec, 1300);
+          later(() => setFile(el.fPartner, el.tPartner, 'plain', true), 1500);
+        } else { dec(); setFile(el.fPartner, el.tPartner, 'plain', false); }
+      } },
+  ];
+
+  el.steps.innerHTML = STEPS.map((s, i) => `<button class="step" type="button" data-i="${i}"><b>0${i + 1}</b>${s.label}</button>`).join('');
+  const stepEls = [...el.steps.children];
+
+  let cur = -1, timer = null, playing = true, started = false;
+  function go(i, animate = true) {
+    clearTimeout(timer);
+    pending.forEach(clearTimeout); pending = [];
+    if (!animate || i < cur || i > cur + 1) {
+      // jump: replay states instantly up to i
+      for (let j = 0; j <= i; j++) STEPS[j].run(false);
+    } else {
+      STEPS[i].run(true);
+    }
+    cur = i;
+    stepEls.forEach((s, j) => {
+      s.classList.toggle('done', j < i);
+      s.classList.remove('now'); void s.offsetWidth;
+      if (j === i) { s.style.setProperty('--dur', STEPS[i].dur + 'ms'); s.classList.add('now'); }
+    });
+    el.caption.style.opacity = 0;
+    setTimeout(() => { el.caption.innerHTML = STEPS[i].cap; el.caption.style.opacity = 1; }, 180);
+    schedule();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    el.steps.classList.toggle('paused', !playing);
+    if (!playing) return;
+    timer = setTimeout(() => go((cur + 1) % STEPS.length, cur + 1 < STEPS.length), STEPS[cur].dur);
+  }
+  stepEls.forEach(s => s.addEventListener('click', () => go(+s.dataset.i, false)));
+  el.play.addEventListener('click', () => {
+    playing = !playing;
+    el.play.innerHTML = `<svg><use href="#i-${playing ? 'pause' : 'play'}"/></svg>`;
+    el.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    if (playing) go(cur === STEPS.length - 1 ? 0 : cur + 1, true); else schedule();
+  });
+  $('#replay').addEventListener('click', () => { playing = true; el.play.innerHTML = '<svg><use href="#i-pause"/></svg>'; go(0, false); });
+
+  // start when visible
+  STEPS[0].run(false);
+  new IntersectionObserver((es, obs) => {
+    if (es[0].isIntersecting && !started) { started = true; go(0, false); obs.disconnect(); }
+  }, { threshold: .35 }).observe($('#stage'));
+})();
+</script>
+</body>
+</html>

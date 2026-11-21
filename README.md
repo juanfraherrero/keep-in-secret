@@ -12,6 +12,20 @@ kis add ana age1…   # give a partner access
 kis unlock          # what partners run after cloning
 ```
 
+**Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
+**Deep dive:** [docs/how-it-works.md](docs/how-it-works.md)
+
+## Install
+
+Requires Go and git.
+
+```sh
+go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
+```
+
+Or from a clone: `make install` (also links `git-kis`, so `git kis …` works).
+Everyone who works on the repository installs `kis` once, like `git-lfs`.
+
 ## How it works
 
 ```
@@ -35,6 +49,9 @@ working tree (.env plaintext)
 - After `kis unlock`, the master key is cached in `.git/kis/key` (never committed).
 - A pre-commit check blocks any commit that would store a `.gitencrypt` file in
   plaintext, or where `.gitattributes` is out of date.
+
+Crypto details, file format and the git filter protocol are in
+[docs/how-it-works.md](docs/how-it-works.md).
 
 Nothing executable lives in the repo: each person installs `kis` once (like `git-lfs`),
 and `kis unlock` wires it into their clone.
@@ -112,3 +129,6 @@ what kis suggests to new partners.
 make test     # unit + end-to-end tests (drive real git repos)
 make build    # ./bin/kis and ./bin/git-kis (so `git kis …` works)
 ```
+
+The website is a single static file, `docs/index.html` (GitHub Pages: deploy from
+the `/docs` folder on `main`).
