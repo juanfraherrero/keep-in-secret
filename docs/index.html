@@ -688,7 +688,7 @@ footer .wrap { display: flex; justify-content: space-between; align-items: cente
       <div class="card hov sc reveal">
         <span class="n">01 · INSTALL</span>
         <h3>Everyone</h3>
-        <p>You need Go and git. Run <code class="mono">make install</code> from a clone to also get <code class="mono">git kis</code>.</p>
+        <p>You need Go and <strong>git 2.28 or newer</strong> (check with <code class="mono">git --version</code>; kis tells you how to upgrade if it's older). Run <code class="mono">make install</code> from a clone to also get <code class="mono">git kis</code>.</p>
         <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">go install</span> github.com/juanfraherrero/keep-in-secret/cmd/kis@latest</pre></div>
       </div>
       <div class="card hov sc reveal d1">
@@ -738,7 +738,7 @@ git clone … &amp;&amp; cd …
       <!-- 1 pipeline -->
       <div class="card blk reveal">
         <div class="blk-h"><span class="no">01</span><h3>Git filters do the moving</h3>
-          <p><code>.gitencrypt</code> compiles into a managed block in <code>.gitattributes</code> (<code>.env filter=kis diff=kis</code>). Git then pipes those files through kis whenever content crosses between the working tree and the object database.</p></div>
+          <p><code>.gitencrypt</code> compiles into a managed block in <code>.gitattributes</code> (<code>.env filter=kis diff=kis merge=kis</code>), matching exactly what the same line in a <code>.gitignore</code> would. Git then pipes those files through kis whenever content crosses between the working tree and the object database.</p></div>
         <div class="pipe">
           <div class="st"><b class="ok">.env</b><small>working tree</small></div>
           <div class="ar"><i style="background:var(--cyan);box-shadow:0 0 10px var(--cyan)"></i><span style="color:var(--cyan)">git add</span></div>
@@ -831,6 +831,7 @@ git clone … &amp;&amp; cd …
             <tbody>
               <tr><td><code>clean</code> · git add</td><td class="ok">encrypt</td><td class="no">refuse: nothing staged</td></tr>
               <tr><td><code>smudge</code> · checkout</td><td class="ok">decrypt</td><td>pass ciphertext through</td></tr>
+              <tr><td><code>merge</code> · conflicts</td><td class="ok">decrypt, text merge, re-encrypt</td><td>refuse: normal conflict</td></tr>
               <tr><td><code>pre-commit</code></td><td colspan="2">blocks plaintext in staged secrets, or a stale <code>.gitattributes</code></td></tr>
               <tr><td><code>filter.required</code></td><td colspan="2">if kis crashes, git fails rather than storing plaintext</td></tr>
             </tbody>

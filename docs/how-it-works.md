@@ -2,6 +2,11 @@
 
 This page covers how kis is built. For everyday use, see the [README](../README.md).
 
+> **Requirement: git 2.28 or newer.** Older git resolves negated `.gitattributes`
+> patterns differently (found by the differential test in §6), which could encrypt
+> the wrong set of files. `kis init` and `kis unlock` check `git version` and refuse,
+> printing the upgrade command for the current OS; `kis status` shows the version.
+
 kis does two jobs:
 
 1. **Encrypt files transparently inside git**, using git's own filter mechanism.
@@ -30,21 +35,43 @@ managed block in `.gitattributes` (`internal/gitencrypt`):
 
 ```gitattributes
 # >>> kis: generated from .gitencrypt, do not edit (run `kis sync`)
-.env filter=kis diff=kis
-.env.* filter=kis diff=kis
-.env.example !filter !diff
-.gitencrypt !filter !diff
-.gitattributes !filter !diff
-.gitignore !filter !diff
-.kis/** !filter !diff
+.env filter=kis diff=kis merge=kis
+**/.env/** filter=kis diff=kis merge=kis
+.env.* filter=kis diff=kis merge=kis
+**/.env.*/** filter=kis diff=kis merge=kis
+.env.example !filter !diff !merge
+**/.env.example/** !filter !diff !merge
+.gitencrypt !filter !diff !merge
+.gitattributes !filter !diff !merge
+.gitignore !filter !diff !merge
+.kis/** !filter !diff !merge
+.kis/recipients.toml merge=union
 # <<< kis
 ```
 
-- `!pattern` becomes `!filter !diff`, and `dir/` becomes `dir/**`.
+The goal is that a path is encrypted **exactly** when the same line in a
+`.gitignore` would match it. gitattributes only ever matches files, so each
+pattern is translated (`attrPatterns`):
+
+| `.gitencrypt` | gitattributes lines | Why |
+|---|---|---|
+| `.env` | `.env` and `**/.env/**` | gitignore's `.env` also matches a *directory* named `.env`, at any depth |
+| `secrets/` | `**/secrets/**` | a trailing `/` means "directory, anywhere" |
+| `config/prod.yaml`, `/secrets/` | as is, plus `…/**` | a slash anchors to the repo root |
+| `!.env.example` | `!filter !diff !merge` | negations unset the attributes |
+| `\#hash`, `\!bang` | unchanged | backslash escapes mean the same in both syntaxes |
+
+One difference is intentional: gitignore can't re-include a file inside an
+excluded directory (`secrets/` then `!secrets/README.md`), but `.gitencrypt` can.
+
 - kis's own files always come **last**, so a broad pattern like `*` can never
   encrypt the files kis needs to read.
+- `.kis/recipients.toml` uses git's built-in `merge=union`, so partners added on
+  two branches merge without a conflict.
 - `kis sync` rewrites only the text between the markers. Anything else in
-  `.gitattributes` is left alone.
+  `.gitattributes` is left alone. It then re-adds every affected tracked file:
+  new matches get encrypted, and files **dropped** from `.gitencrypt` go back to
+  plaintext (this needs the key, so it's refused while locked).
 
 ### Filter wiring (`.git/config`)
 
@@ -56,6 +83,7 @@ managed block in `.gitattributes` (`internal/gitencrypt`):
 | `filter.kis.clean` / `smudge` | `kis clean %f` / `kis smudge %f` | One-shot fallback |
 | `filter.kis.required` | `true` | If kis fails, git fails rather than storing plaintext |
 | `diff.kis.textconv` | `kis textconv` | `git diff` shows decrypted content when unlocked |
+| `merge.kis.driver` | `kis merge %O %A %B %L %P` | 3-way merge of encrypted files as text (below) |
 
 The repository holds no executable code: this config lives in `.git/config`,
 which is never committed.
@@ -88,6 +116,20 @@ so checking out 1,000 secrets doesn't read the key 1,000 times.
   stored as is.
 - **smudge never breaks a checkout**: without the key, or with the wrong one, you
   just get ciphertext in your working tree.
+
+### Merging encrypted files
+
+Git can't merge ciphertext: left alone it reports a binary conflict and keeps
+one side. The `merge=kis` driver fixes that:
+
+1. git passes the three blobs as stored (base `%O`, ours `%A`, theirs `%B`), all ciphertext;
+2. kis decrypts them into a private temp dir under `.git/kis/`;
+3. it runs `git merge-file` on the plaintext (labels `ours` / `base` / `theirs`);
+4. it writes the result back to `%A` **encrypted**, and exits non-zero on conflicts.
+
+git then checks the result out through the smudge filter, so conflict markers
+show up in the working copy as plaintext, while the object store only ever sees
+ciphertext. When locked, the driver refuses and git reports a normal conflict.
 
 ### Pre-commit safety net
 
@@ -189,8 +231,11 @@ on success:
 
 1. caches the raw master key at `.git/kis/key` (mode `0600`, never committed,
    shared across worktrees through the common git dir),
-2. wires the filters and hook,
-3. re-checks-out tracked secrets so the smudge filter turns them into plaintext.
+2. wires the filters, merge driver and hook,
+3. re-checks-out tracked secrets so the smudge filter turns them into plaintext,
+4. re-encrypts any secret that was **staged as plaintext** while the filter was
+   missing. A plain `git add` can't be trusted to do it: git skips files whose
+   stat info is unchanged since they were staged.
 
 `kis lock` does the reverse: it deletes the cache and checks the files out again
 as ciphertext. It refuses if you have uncommitted changes, unless you pass `--force`.
@@ -235,20 +280,53 @@ ciphertext for them.
 
 ```
 cmd/kis/
-  main.go         command table and dispatch
-  commands.go     init, keygen, add, remove, rotate, unlock, lock, status, sync
-  plumbing.go     hidden commands git calls: clean, smudge, filter-process, textconv, precommit
-  ui.go           prompts and output helpers
-  e2e_test.go     end-to-end: real git repos, owner + partner, remote round-trips
+  main.go           command table and dispatch
+  commands.go       init, keygen, add, remove, rotate, unlock, lock, status, sync
+  plumbing.go       hidden commands git calls: clean, smudge, filter-process, textconv, merge, precommit
+  ui.go             prompts and output helpers
+  script_test.go    end-to-end harness (testscript) and its custom commands
+  testdata/script/  one .txtar scenario per user journey
 internal/
-  crypt/          deterministic AES-256-GCM (SIV-style) and file format
-  filter/         clean/smudge rules and the pkt-line filter protocol
-  gitencrypt/     .gitencrypt → .gitattributes managed block
-  keys/           age/SSH identities, recipients, github:USER, wrap/unwrap
-  repo/           .kis/ state, key cache, file discovery, git wiring and hook
-  gitx/           thin git exec helpers
+  crypt/            deterministic AES-256-GCM (SIV-style), file format, v1 fixture
+  filter/           clean/smudge rules and the pkt-line filter protocol
+  gitencrypt/       .gitencrypt → .gitattributes managed block
+  keys/             age/SSH identities, recipients, github:USER, wrap/unwrap
+  repo/             .kis/ state, key cache, file discovery, git wiring and hook
+  gitx/             git exec helpers and the git version check
+test/docker/        test image + runner for the git version / distro matrix
 ```
 
 Dependencies: `filippo.io/age`, `golang.org/x/crypto/ssh`, `golang.org/x/term`,
 `BurntSushi/toml`. Everything else is the Go standard library (`crypto/aes`,
 `crypto/cipher`, `crypto/hkdf`, `crypto/hmac`).
+
+---
+
+## 6. Testing
+
+Every layer has its own tests, and CI runs all of them on macOS, Linux and Windows.
+
+| Layer | Where | What it proves |
+|---|---|---|
+| End-to-end scenarios | `cmd/kis/testdata/script/*.txtar` | Real `kis` + `git` sessions, several people, one shared remote. Each command's output and **exact** file changes are asserted |
+| Differential | `internal/gitencrypt/semantics_test.go` | `.gitencrypt` matches what real `git check-ignore` would match |
+| Fuzzing | `FuzzDecrypt`, `FuzzRoundTrip`, `FuzzProcess` | Decrypt never accepts forged input; the filter protocol never panics or hangs on malformed input |
+| Frozen fixtures | `internal/*/testdata/v1/` | Future versions still decrypt v1 files **byte for byte** and unwrap v1 keys (age and SSH) |
+| Git matrix | `test/docker/`, `make test-docker` | The whole suite on git 2.28 → 2.55 (built from source) and on Ubuntu, Debian, Alpine, Fedora |
+
+A scenario reads like a terminal session:
+
+```
+as owner                          # own HOME, keys and git identity
+cd app
+snapshot before
+exec kis init -y --name owner
+stdout '✓ created \.gitencrypt'
+changed before +.gitencrypt +.gitattributes ~.gitignore +.kis/config.toml …
+stored HEAD .env                  # what git stores is ciphertext
+```
+
+The test binary doubles as `kis`, so git's filters, merge driver and hook call
+back into the code under test. Interactive prompts and SSH passphrases run
+through a real pseudo-terminal (`ttyin`). The scenario language is documented in
+[`cmd/kis/testdata/script/README.md`](../cmd/kis/testdata/script/README.md).
