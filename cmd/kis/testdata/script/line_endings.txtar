@@ -1,0 +1,38 @@
+# core.autocrlf (the Git for Windows default) must never touch ciphertext:
+# secrets round-trip byte for byte and the tree stays clean.
+
+mkdir app
+cd app
+exec git init -q
+exec git config core.autocrlf true
+cp $WORK/crlf .env
+cp $WORK/crlf notes.txt
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+stored HEAD .env
+exec git status --porcelain
+! stdout .
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+# A teammate without autocrlf gets the secret exactly as written.
+as mac
+exec kis keygen
+pubkey MAC
+as owner
+exec kis add mac $MAC
+exec git commit -qm 'add mac'
+exec git push -q
+
+as mac
+cd $WORK
+exec git clone -q $REMOTE m
+cd m
+exec kis unlock
+cmp .env $WORK/crlf
+exec git status --porcelain
+! stdout .
+-- crlf --
+A=1
+B=2
