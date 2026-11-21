@@ -13,7 +13,7 @@ exec git init -q
 ttyin -stdin $WORK/answers
 exec kis init
 stderr 'Which key do you want to use to unlock this repository\?'
-stderr '1\) Use existing ssh key  .*/\.ssh/id_ed25519'
+stderr '1\) Use existing ssh key  .*[/\\]\.ssh[/\\]id_ed25519'
 stderr '2\) Create a new kis key \(recommended\)'
 stderr 'Choose \[2\]: '
 stderr 'Your name \(as partners will see it\) \[owner\]: '
