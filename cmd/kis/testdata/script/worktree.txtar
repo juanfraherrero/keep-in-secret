@@ -1,0 +1,21 @@
+# Linked worktrees share the key unlocked in the main checkout.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git worktree add -q ../wt -b wt
+cd ../wt
+cmp .env $WORK/env
+exec kis status
+stdout 'state +unlocked'
+cp $WORK/env2 .env
+exec git commit -qam 'from worktree'
+stored HEAD .env
+-- app/.env --
+X=1
+-- env --
+X=1
+-- env2 --
+X=2

@@ -1,0 +1,68 @@
+# Everyday git operations keep secrets encrypted in git and plaintext on disk.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+
+# Branch, edit, merge without conflict.
+exec git switch -q -c feature
+cp $WORK/v2 .env
+exec git commit -qam 'feature env'
+exec git switch -q main
+cmp .env $WORK/v1
+exec git merge -q feature
+cmp .env $WORK/v2
+stored HEAD .env
+
+# Stash and pop.
+cp $WORK/v3 .env
+exec git stash -q
+cmp .env $WORK/v2
+exec git stash pop -q
+cmp .env $WORK/v3
+exec git checkout -- .env
+
+# Rename keeps it encrypted when the new name matches.
+exec git mv .env .env.local
+exec git commit -qm rename
+stored HEAD .env.local
+cmp .env.local $WORK/v2
+
+# Rebase and cherry-pick replay encrypted blobs.
+exec git switch -q -c other HEAD~1
+cp $WORK/v4 .env.production
+exec git add .env.production
+exec git commit -qm prod
+exec git rebase -q main
+stored HEAD .env.production
+cmp .env.production $WORK/v4
+exec git switch -q main
+exec git cherry-pick other
+cmp .env.production $WORK/v4
+
+# Commands work from a subdirectory.
+mkdir sub
+cd sub
+exec kis status
+stdout '\.env\.local +encrypted in git'
+cd ..
+
+# git log -p and git show print plaintext diffs.
+exec git log -p -1 -- .env.production
+stdout '^\+PROD=1$'
+exec git show HEAD~1:.env.local
+! stdout 'DB='
+exec git status --porcelain
+! stdout .
+-- app/.env --
+DB=1
+-- v1 --
+DB=1
+-- v2 --
+DB=2
+-- v3 --
+DB=3
+-- v4 --
+PROD=1
