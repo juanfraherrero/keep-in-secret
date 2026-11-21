@@ -716,6 +716,13 @@ func cmdStatus([]string) error {
 		return "MISSING (run `" + fix + "`)"
 	}
 	fmt.Printf("repository      %s\n", r.Root)
+	if v, err := gitx.Version(); err == nil {
+		note := "ok"
+		if !gitx.Supported(v) {
+			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+ (run `kis unlock` for upgrade steps)", gitx.MinVersion[0], gitx.MinVersion[1])
+		}
+		fmt.Printf("git             %d.%d.%d %s\n", v[0], v[1], v[2], note)
+	}
 	fmt.Printf("state           %s\n", state)
 	fmt.Printf("git filters     %s\n", yesNo(r.GitConfigured(), "kis unlock"))
 	fmt.Printf("pre-commit      %s\n", yesNo(r.HookInstalled(), "kis unlock"))

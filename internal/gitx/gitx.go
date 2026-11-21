@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -66,23 +67,51 @@ func ParseVersion(out string) ([3]int, error) {
 	return v, nil
 }
 
-// CheckVersion fails when the installed git is older than MinVersion.
-func CheckVersion() error {
+// Version returns the installed git version.
+func Version() ([3]int, error) {
 	out, err := Run(".", "version")
 	if err != nil {
-		return err
+		return [3]int{}, err
 	}
-	v, err := ParseVersion(out)
+	return ParseVersion(out)
+}
+
+// Supported reports whether v is at least MinVersion.
+func Supported(v [3]int) bool {
+	for i := range v {
+		if v[i] != MinVersion[i] {
+			return v[i] > MinVersion[i]
+		}
+	}
+	return true
+}
+
+// CheckVersion fails when the installed git is older than MinVersion, with
+// instructions for upgrading on this OS.
+func CheckVersion() error {
+	v, err := Version()
 	if err != nil {
 		return err
 	}
-	for i := range v {
-		if v[i] != MinVersion[i] {
-			if v[i] < MinVersion[i] {
-				return fmt.Errorf("kis needs git %d.%d or newer (found %d.%d.%d): please upgrade git", MinVersion[0], MinVersion[1], v[0], v[1], v[2])
-			}
-			break
-		}
+	if Supported(v) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("kis needs git %d.%d or newer (found %d.%d.%d): please upgrade git.\n%s",
+		MinVersion[0], MinVersion[1], v[0], v[1], v[2], UpgradeHint(runtime.GOOS))
+}
+
+// UpgradeHint tells the user how to get a current git on goos.
+func UpgradeHint(goos string) string {
+	switch goos {
+	case "darwin":
+		return "  macOS:   brew install git   (then open a new terminal and check `git --version`)"
+	case "windows":
+		return "  Windows: winget install --id Git.Git -e   (or download https://git-scm.com/download/win)"
+	default:
+		return "  Ubuntu:        sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git\n" +
+			"  Debian:        sudo apt install git   (Debian 11 and newer ship a supported git)\n" +
+			"  Fedora/RHEL:   sudo dnf install git\n" +
+			"  Alpine:        apk add git\n" +
+			"  Other:         https://git-scm.com/download/linux"
+	}
 }

@@ -3,15 +3,28 @@
 
 cd app
 exec git init -q
+env PATH_BEFORE=$PATH
 env PATH=$WORK/fakegit:$PATH
 chmod 755 $WORK/fakegit/git
 exec git version
 stdout 'git version 2.25.1'
 ! exec kis init -y
 stderr 'kis needs git 2.28 or newer \(found 2.25.1\): please upgrade git'
+[darwin] stderr 'brew install git'
+[linux] stderr 'ppa:git-core/ppa'
 ! exists .kis
 ! exec kis unlock
 stderr 'kis needs git 2.28 or newer'
+
+# status flags it too, without failing.
+env PATH=$PATH_BEFORE
+exec kis init -y --name owner
+env PATH=$WORK/fakegit:$PATH_BEFORE
+exec kis status
+stdout '^git +2\.25\.1 TOO OLD: kis needs 2\.28\+'
+env PATH=$PATH_BEFORE
+exec kis status
+stdout '^git +\d+\.\d+\.\d+ ok$'
 -- fakegit/git --
 #!/bin/sh
 if [ "$1" = version ]; then echo "git version 2.25.1"; exit 0; fi
