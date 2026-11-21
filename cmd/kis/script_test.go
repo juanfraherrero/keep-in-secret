@@ -76,6 +76,11 @@ func setupScript(env *testscript.Env) error {
 	if out, err := exec.Command("git", "init", "-q", "--bare", "-b", "main", remote).CombinedOutput(); err != nil {
 		return fmt.Errorf("creating remote: %v\n%s", err, out)
 	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		return err
+	}
+	env.Setenv("REAL_GIT", realGit)
 	env.Setenv("REMOTE", remote)
 	env.Setenv("KIS_GITHUB_KEYS_URL", srv.URL+"/%s.keys")
 	env.Setenv("GIT_CONFIG_NOSYSTEM", "1")

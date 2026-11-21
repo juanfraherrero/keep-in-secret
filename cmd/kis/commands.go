@@ -41,6 +41,9 @@ func cmdInit(args []string) error {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
 
+	if err := gitx.CheckVersion(); err != nil {
+		return err
+	}
 	r, err := repo.Open()
 	if err != nil {
 		return err
@@ -584,6 +587,9 @@ func cmdUnlock(args []string) error {
 	fs := newFlags("unlock")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	parseFlags(fs, args)
+	if err := gitx.CheckVersion(); err != nil {
+		return err
+	}
 	r, err := openInitialized()
 	if err != nil {
 		return err

@@ -1,0 +1,20 @@
+# kis refuses to set up or unlock with a git older than 2.28.
+[!unix] skip 'fake git is a shell script'
+
+cd app
+exec git init -q
+env PATH=$WORK/fakegit:$PATH
+chmod 755 $WORK/fakegit/git
+exec git version
+stdout 'git version 2.25.1'
+! exec kis init -y
+stderr 'kis needs git 2.28 or newer \(found 2.25.1\): please upgrade git'
+! exists .kis
+! exec kis unlock
+stderr 'kis needs git 2.28 or newer'
+-- fakegit/git --
+#!/bin/sh
+if [ "$1" = version ]; then echo "git version 2.25.1"; exit 0; fi
+exec "$REAL_GIT" "$@"
+-- app/.env --
+A=1
