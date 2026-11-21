@@ -1,0 +1,86 @@
+# .gitencrypt supports gitignore syntax: dirs, negation, nesting, anchors, spaces.
+
+cd app
+exec git init -q
+cp $WORK/gitencrypt .gitencrypt
+exec kis init -y --name owner
+stdout 'using existing \.gitencrypt'
+
+attr secrets/db.json filter kis
+attr secrets/nested/deep.key filter kis
+attr secrets/README.md filter unspecified
+attr services/secrets/token filter kis
+attr services/api/.env filter kis
+attr config/prod.yaml filter kis
+attr sub/config/prod.yaml filter unspecified
+attr 'my keys.txt' filter kis
+attr certs/server.pem filter kis
+attr certs/public.pem filter unspecified
+attr README.md filter unspecified
+
+exec git add .
+exec git commit -qm init
+stored HEAD services/secrets/token secrets/db.json secrets/nested/deep.key services/api/.env config/prod.yaml 'my keys.txt' certs/server.pem
+! stored HEAD secrets/README.md sub/config/prod.yaml certs/public.pem README.md
+
+# Removing a pattern turns the file back into plaintext in git after sync.
+cp $WORK/gitencrypt-less .gitencrypt
+exec kis sync
+attr config/prod.yaml filter unspecified
+! stored : config/prod.yaml
+exec git commit -qm 'prod.yaml is public now'
+! stored HEAD config/prod.yaml
+cmp config/prod.yaml $WORK/prod
+exec git status --porcelain
+! stdout .
+
+# Dropping a pattern while locked is refused: kis needs the plaintext.
+cp $WORK/gitencrypt-least .gitencrypt
+exec kis lock
+! exec kis sync
+stderr 'my keys.txt would stop being encrypted, which needs the plaintext: repository is locked'
+-- gitencrypt-least --
+.env
+secrets/
+!secrets/README.md
+*.pem
+!public.pem
+-- gitencrypt --
+.env
+secrets/
+!secrets/README.md
+/config/prod.yaml
+my keys.txt
+*.pem
+!public.pem
+-- gitencrypt-less --
+.env
+secrets/
+!secrets/README.md
+my keys.txt
+*.pem
+!public.pem
+-- prod --
+replicas: 3
+-- app/README.md --
+readme
+-- app/secrets/db.json --
+{"pw":"x"}
+-- app/secrets/nested/deep.key --
+deep
+-- app/secrets/README.md --
+what goes here
+-- app/services/secrets/token --
+nested secrets dir
+-- app/services/api/.env --
+API=1
+-- app/config/prod.yaml --
+replicas: 3
+-- app/sub/config/prod.yaml --
+not anchored
+-- app/my keys.txt --
+spaces
+-- app/certs/server.pem --
+PRIVATE
+-- app/certs/public.pem --
+PUBLIC

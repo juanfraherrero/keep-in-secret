@@ -1,0 +1,123 @@
+# kis init on a repo whose .env is gitignored, with a freshly generated age key.
+
+cd app
+exec git init -q
+snapshot before
+
+exec kis init -y --name owner
+stdout '✓ created your key at .*home[/\\]owner[/\\].*identity'
+stdout '✓ created \.gitencrypt'
+stdout '✓ created repository key, encrypted for owner \(age key'
+stdout '✓ configured git filters and pre-commit check'
+stdout '! ignored by \.gitignore: \.env'
+stdout '✓ un-ignored them in \.gitignore'
+stdout '✓ staged encrypted: \.env'
+stdout 'Next steps:'
+stdout 'They run `kis keygen`'
+! stderr .
+
+# Exactly these files appear or change in the repo.
+changed before +.gitencrypt +.gitattributes ~.gitignore +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/hooks/pre-commit +.git/kis/key
+
+# The personal key lives outside the repo, private.
+exists $KIS_KEY
+grep '^AGE-SECRET-KEY-' $KIS_KEY
+
+# Committed state.
+cmp .gitencrypt $WORK/want/gitencrypt
+cmp .gitattributes $WORK/want/gitattributes
+cmp .kis/config.toml $WORK/want/config.toml
+grep '^owner = \["age1[a-z0-9]+"\]$' .kis/recipients.toml
+grep '^-----BEGIN AGE ENCRYPTED FILE-----$' .kis/keys/owner.age
+grep '^!/\.env$' .gitignore
+
+# Git wiring is local to this clone.
+exec git config --local filter.kis.process
+stdout '^kis filter-process$'
+exec git config --local filter.kis.required
+stdout '^true$'
+exec git config --local diff.kis.textconv
+stdout '^kis textconv$'
+exec git config --local merge.kis.driver
+stdout '^kis merge %O %A %B %L %P$'
+grep 'kis precommit' .git/hooks/pre-commit
+
+# Attributes route the right files through kis.
+attr .env filter kis
+attr .env.production filter kis
+attr .env.example filter unspecified
+attr .kis/keys/owner.age filter unspecified
+attr README.md filter unspecified
+attr .env merge kis
+attr .kis/recipients.toml merge union
+
+# Everything is staged: secrets encrypted, examples and kis files readable.
+exec git status --porcelain
+cmp stdout $WORK/want/status
+stored : .env
+! stored : .gitencrypt .gitattributes .kis/recipients.toml
+cmp .env $WORK/want/env
+
+exec git add .
+exec git commit -qm init
+stored HEAD .env
+! stored HEAD .env.example README.md
+exec git status --porcelain
+! stdout .
+
+# A second init is refused.
+! exec kis init -y
+stderr 'already set up here'
+
+-- app/README.md --
+hello
+-- app/.gitignore --
+.env
+node_modules/
+-- app/.env --
+DB_PASS=hunter2
+-- app/.env.example --
+DB_PASS=
+-- want/env --
+DB_PASS=hunter2
+-- want/config.toml --
+# kis repository settings. default_key is the key type suggested to new partners.
+version = 1
+default_key = "age"
+-- want/status --
+A  .env
+A  .gitattributes
+A  .gitencrypt
+A  .gitignore
+A  .kis/config.toml
+A  .kis/keys/owner.age
+A  .kis/recipients.toml
+?? .env.example
+?? README.md
+-- want/gitencrypt --
+# Files matching these patterns are encrypted in git by kis (keep-in-secret).
+# Same syntax as .gitignore. kis keeps .gitattributes in sync; run "kis sync"
+# after editing (the pre-commit check will remind you).
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+-- want/gitattributes --
+# >>> kis: generated from .gitencrypt, do not edit (run `kis sync`)
+.env filter=kis diff=kis merge=kis
+**/.env/** filter=kis diff=kis merge=kis
+.env.* filter=kis diff=kis merge=kis
+**/.env.*/** filter=kis diff=kis merge=kis
+.env.example !filter !diff !merge
+**/.env.example/** !filter !diff !merge
+.env.sample !filter !diff !merge
+**/.env.sample/** !filter !diff !merge
+.env.template !filter !diff !merge
+**/.env.template/** !filter !diff !merge
+.gitencrypt !filter !diff !merge
+.gitattributes !filter !diff !merge
+.gitignore !filter !diff !merge
+.kis/** !filter !diff !merge
+.kis/recipients.toml merge=union
+# <<< kis

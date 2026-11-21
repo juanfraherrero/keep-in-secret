@@ -1,0 +1,33 @@
+# kis init on a repo that already committed .env in plaintext and has its own hook.
+
+cd app
+exec git init -q
+exec git add .
+exec git commit -qm 'oops, committed the env'
+! stored HEAD .env
+cp $WORK/hook .git/hooks/pre-commit
+chmod 755 .git/hooks/pre-commit
+
+snapshot before
+exec kis init -y --name owner
+stdout '! .*pre-commit already exists; add this line to it'
+stdout 'kis precommit \|\| exit 1'
+stdout '! these were already committed in PLAINTEXT before: \.env'
+stdout 'old commits still contain them: rotate those secrets'
+changed before +.gitencrypt +.gitattributes +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/kis/key
+
+# The user's hook is untouched.
+cmp .git/hooks/pre-commit $WORK/hook
+exec kis status
+stdout 'pre-commit +MISSING'
+
+# The tracked .env was re-encrypted in the index.
+stored : .env
+exec git commit -qm 'encrypt env'
+stored HEAD .env
+! stored HEAD~1 .env
+-- app/.env --
+SECRET=leaked
+-- hook --
+#!/bin/sh
+echo running lint

@@ -1,0 +1,5 @@
+# Keep source and test data byte-identical on every OS (Windows checkouts
+# would otherwise get CRLF, breaking scenarios and frozen fixtures).
+* text=auto eol=lf
+*.txtar text eol=lf
+**/testdata/** -text

@@ -1,0 +1,57 @@
+# Clear errors for common mistakes.
+
+# Outside a git repository.
+! exec kis init -y
+stderr 'not inside a git repository \(run `git init` first\)'
+! exec kis status
+stderr 'not inside a git repository'
+
+# A repo without kis.
+exec git init -q plain
+cd plain
+! exec kis unlock
+stderr 'kis is not set up in this repository: run `kis init`'
+! exec kis add bob age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+stderr 'not set up'
+# Hook is a no-op where kis is not set up.
+exec kis precommit
+
+# Set up, then misuse.
+exec kis init -y --name owner
+! exec kis add 'bad name' age1xyz
+stderr 'invalid name "bad name"'
+! exec kis add bob not-a-key
+stderr 'not a public key'
+! exec kis add bob $KIS_KEY
+stderr 'is a private key; pass the public key instead'
+! exec kis add bob 'sk-ssh-ed25519@openssh.com AAAA'
+stderr 'unsupported key type'
+! exec kis remove owner
+stderr 'cannot remove the last partner'
+! exec kis remove nobody
+stderr 'nobody is not a partner'
+! exec kis add
+stderr 'Usage: kis add'
+! exec kis frobnicate
+stderr 'unknown command "frobnicate"'
+
+# Adding partners requires being unlocked.
+exec kis lock
+! exec kis add bob age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs3290gq
+stderr 'repository is locked: run `kis unlock`'
+! exec kis rotate
+stderr 'locked'
+
+# A corrupted key cache is reported, not silently used.
+exec kis unlock
+cp $WORK/garbage .git/kis/key
+! exec kis add bob age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs3290gq
+stderr 'corrupted key cache: run `kis unlock` again'
+
+# Nobody with a key at all.
+as stranger
+! exec kis unlock
+stderr 'no key found on this machine'
+stderr 'kis keygen'
+-- garbage --
+short

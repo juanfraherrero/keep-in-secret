@@ -196,8 +196,16 @@ func RecipientType(s string) string {
 	return TypeSSH
 }
 
-// GitHubKeysURL can be overridden in tests.
-var GitHubKeysURL = "https://github.com/%s.keys"
+// GitHubKeysURL is where `github:USER` public keys are fetched from.
+// KIS_GITHUB_KEYS_URL overrides it (end-to-end tests use a local server).
+var GitHubKeysURL = envOr("KIS_GITHUB_KEYS_URL", "https://github.com/%s.keys")
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 
 // ResolveRecipients expands a user-supplied key argument: a literal public
 // key, "github:<user>", or a path to a file containing public keys.

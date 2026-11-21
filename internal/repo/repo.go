@@ -28,6 +28,7 @@ const (
 
 var ErrLocked = errors.New("repository is locked: run `kis unlock`")
 var ErrNotInitialized = errors.New("kis is not set up in this repository: run `kis init`")
+var ErrNoAccess = errors.New("none of your keys can unlock this repository")
 
 type Config struct {
 	Version    int    `toml:"version"`
@@ -45,9 +46,13 @@ func Open() (*Repo, error) {
 	if err != nil {
 		return nil, errors.New("not inside a git repository (run `git init` first)")
 	}
-	gitDir, err := gitx.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	// --path-format=absolute needs git 2.31; resolve the path ourselves.
+	gitDir, err := gitx.Run(root, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return nil, err
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
 	}
 	return &Repo{Root: root, GitDir: gitDir}, nil
 }
@@ -151,8 +156,13 @@ func (r *Repo) UnwrapMasterKey(ids []age.Identity) ([]byte, string, error) {
 		if err == nil && len(master) == crypt.KeySize {
 			return master, strings.TrimSuffix(filepath.Base(f), ".age"), nil
 		}
+		// A key matched but could not be used (e.g. wrong SSH passphrase).
+		var noMatch *age.NoIdentityMatchError
+		if err != nil && !errors.As(err, &noMatch) {
+			return nil, "", err
+		}
 	}
-	return nil, "", errors.New("none of your keys can unlock this repository")
+	return nil, "", ErrNoAccess
 }
 
 // Master key cache: .git/kis/key, never committed.
@@ -186,6 +196,16 @@ func (r *Repo) ForgetMasterKey() error {
 		return nil
 	}
 	return err
+}
+
+// TempDir creates a private scratch directory inside .git/kis for plaintext
+// that must briefly touch disk. Callers remove it.
+func (r *Repo) TempDir() (string, error) {
+	dir := filepath.Join(r.GitDir, "kis")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(dir, "tmp-")
 }
 
 func (r *Repo) Cipher() (*crypt.Cipher, error) {
@@ -280,6 +300,16 @@ func (r *Repo) TrackedSecrets() ([]string, error) {
 		return nil, err
 	}
 	return r.filterMatches(files, false)
+}
+
+// IndexedSecrets lists tracked files that the staged .gitattributes marks for
+// encryption, i.e. what was encrypted before a pending .gitencrypt change.
+func (r *Repo) IndexedSecrets() ([]string, error) {
+	files, err := r.lsFiles()
+	if err != nil {
+		return nil, err
+	}
+	return r.filterMatches(files, true)
 }
 
 // UntrackedSecrets lists untracked files matching .gitencrypt, split into

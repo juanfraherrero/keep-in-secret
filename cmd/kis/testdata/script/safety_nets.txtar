@@ -1,0 +1,55 @@
+# The pre-commit check and the filter refuse to let plaintext secrets in.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+
+# Editing .gitencrypt without syncing blocks the commit.
+cp $WORK/gitencrypt-extra .gitencrypt
+exec git add .
+! exec git commit -qm 'more secrets'
+stderr '.gitencrypt changed but .gitattributes was not updated'
+stderr 'Run `kis sync`'
+exec kis sync
+stdout '✓ updated .gitattributes from .gitencrypt'
+attr config/secrets.json filter kis
+exec git commit -qm 'more secrets'
+stored HEAD config/secrets.json
+
+# Without the filter configured, plaintext gets staged and the hook blocks it.
+exec git config --remove-section filter.kis
+cp $WORK/local .env.local
+exec git add .env.local
+! stored : .env.local
+! exec git commit -qm leak
+stderr 'commit blocked, these files would be stored in PLAINTEXT'
+stderr '    .env.local'
+exec kis unlock
+stdout '✓ re-encrypted staged \.env\.local'
+stored : .env.local
+exec git commit -qm 'local env'
+stored HEAD .env.local
+
+# A locked repo refuses to encrypt new plaintext rather than leak it.
+exec kis lock
+cp $WORK/local .env.prod
+! exec git add .env.prod
+stderr 'refusing to store .env.prod in plaintext: repository is locked'
+
+exec kis status
+stdout 'state +LOCKED'
+stdout '\.env\.local +encrypted in git'
+stdout 'config/secrets.json +encrypted in git'
+-- app/.env --
+A=1
+-- app/config/secrets.json --
+{"token":"abc"}
+-- local --
+LOCAL=1
+-- gitencrypt-extra --
+.env
+.env.*
+!.env.example
+config/secrets.json

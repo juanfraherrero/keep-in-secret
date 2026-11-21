@@ -135,3 +135,23 @@ func TestPassphraseProtectedSSHKey(t *testing.T) {
 		t.Fatalf("unwrap: %v, asked %d times", err, asked)
 	}
 }
+
+// TestFormatV1Frozen unwraps a master key wrapped by kis v1, with both an age
+// and an SSH identity. See testdata/v1/README.md.
+func TestFormatV1Frozen(t *testing.T) {
+	wrapped, err := os.ReadFile("testdata/v1/master.age")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "kis-v1-fixture-key-do-not-use-!!"
+	for _, p := range []string{"testdata/v1/identity", "testdata/v1/id_ed25519"} {
+		id, err := LoadIdentity(p, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Unwrap(wrapped, id)
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: cannot unwrap v1 fixture: %v (%q)", p, err, got)
+		}
+	}
+}

@@ -1,0 +1,67 @@
+# Both sides change the same secret: the conflict must be resolvable as text.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+
+exec git switch -q -c a
+cp $WORK/a .env
+exec git commit -qam a
+exec git switch -q main
+cp $WORK/b .env
+exec git commit -qam b
+
+! exec git merge a
+stdout 'CONFLICT \(content\): Merge conflict in \.env'
+# Conflict markers in plaintext, never ciphertext in the working copy.
+! encrypted .env
+grep '^<<<<<<< ours$' .env
+grep '^>>>>>>> theirs$' .env
+! grep 'base' .env
+# git's object store got the merge result encrypted.
+exec git ls-files -u .env
+stdout -count=3 '\.env'
+grep '^API=b$' .env
+grep '^API=a$' .env
+
+cp $WORK/resolved .env
+exec git add .env
+exec git commit -qm merged
+stored HEAD .env
+cmp .env $WORK/resolved
+
+# A merge where both sides touch different lines resolves cleanly, as text.
+exec git switch -q -c c
+cp $WORK/c .env
+exec git commit -qam c
+exec git switch -q main
+cp $WORK/d .env
+exec git commit -qam d
+exec git merge -q -m 'auto' c
+cmp .env $WORK/cd
+stored HEAD .env
+-- c --
+API=resolved
+SHARED=1
+EXTRA=c
+-- d --
+API=from-d
+SHARED=1
+-- cd --
+API=from-d
+SHARED=1
+EXTRA=c
+-- app/.env --
+API=base
+SHARED=1
+-- a --
+API=a
+SHARED=1
+-- b --
+API=b
+SHARED=1
+-- resolved --
+API=resolved
+SHARED=1

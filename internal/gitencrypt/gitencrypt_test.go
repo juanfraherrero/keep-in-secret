@@ -8,11 +8,12 @@ import (
 func TestBlock(t *testing.T) {
 	got := Block("# comment\n.env\n!.env.example\nsecrets/\nmy file.txt\n\n")
 	for _, want := range []string{
-		".env filter=kis diff=kis\n",
-		".env.example !filter !diff\n",
-		"secrets/** filter=kis diff=kis\n",
-		`"my file.txt" filter=kis diff=kis` + "\n",
-		".kis/** !filter !diff\n",
+		".env filter=kis diff=kis merge=kis\n",
+		".env.example !filter !diff !merge\n",
+		"**/secrets/** filter=kis diff=kis merge=kis\n",
+		"**/.env/** filter=kis diff=kis merge=kis\n",
+		`"my file.txt" filter=kis diff=kis merge=kis` + "\n",
+		".kis/** !filter !diff !merge\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("block missing %q:\n%s", want, got)

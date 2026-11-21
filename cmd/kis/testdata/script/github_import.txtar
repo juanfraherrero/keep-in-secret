@@ -1,0 +1,40 @@
+# kis add NAME github:USER fetches every usable key from github.com/USER.keys.
+
+as ana
+sshkey ana@laptop $HOME/.ssh/id_ed25519
+sshkey -rsa ana@desktop $HOME/.ssh/id_rsa
+exec sh -c 'cat $HOME/.ssh/id_ed25519.pub $HOME/.ssh/id_rsa.pub $WORK/ecdsa.pub > $WORK/ana.keys'
+github ana $WORK/ana.keys
+
+as owner
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec kis add ana github:ana
+stdout '✓ added ana \(2 key\(s\), ssh\)'
+grep 'ana@laptop' .kis/recipients.toml
+grep 'ana@desktop' .kis/recipients.toml
+! grep 'ecdsa' .kis/recipients.toml
+
+! exec kis add bob github:bob
+stderr 'github user "bob": 404'
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+# Either of ana's keys unlocks. Move ed25519 away to prove RSA works alone.
+as ana
+cd $WORK
+exec git clone -q $REMOTE a
+cd a
+mv $HOME/.ssh/id_ed25519 $HOME/.ssh/disabled
+exec kis unlock
+stdout 'unlocked as ana'
+cmp .env $WORK/env
+-- ecdsa.pub --
+ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNotARealKeyButSkippedAnyway= ana@phone
+-- app/.env --
+K=v
+-- env --
+K=v

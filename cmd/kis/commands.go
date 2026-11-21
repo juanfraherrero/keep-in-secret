@@ -41,6 +41,9 @@ func cmdInit(args []string) error {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
 
+	if err := gitx.CheckVersion(); err != nil {
+		return err
+	}
 	r, err := repo.Open()
 	if err != nil {
 		return err
@@ -88,6 +91,9 @@ func cmdInit(args []string) error {
 	step("created repository key, encrypted for %s (%s key %s)", me, keyType, keyPath)
 
 	if err := wireGit(r); err != nil {
+		return err
+	}
+	if _, err := r.SyncAttributes(); err != nil {
 		return err
 	}
 	plainInHistory := committedPlaintext(r)
@@ -230,9 +236,14 @@ func wireGit(r *repo.Repo) error {
 	return nil
 }
 
-// syncAndStage regenerates .gitattributes, re-runs the clean filter on
-// tracked secrets and stages kis's own files.
+// syncAndStage regenerates .gitattributes, stages kis's own files and re-adds
+// every tracked file whose encryption may have changed: current secrets get
+// encrypted, files dropped from .gitencrypt go back to plaintext.
 func syncAndStage(r *repo.Repo) error {
+	previous, err := r.IndexedSecrets()
+	if err != nil {
+		return err
+	}
 	if _, err := r.SyncAttributes(); err != nil {
 		return err
 	}
@@ -243,7 +254,44 @@ func syncAndStage(r *repo.Repo) error {
 	if err != nil {
 		return err
 	}
-	return r.Renormalize(secrets)
+	leaving := subtract(previous, secrets)
+	if len(leaving) > 0 {
+		c, err := r.Cipher()
+		if err != nil {
+			return fmt.Errorf("%s would stop being encrypted, which needs the plaintext: %w", strings.Join(leaving, ", "), err)
+		}
+		// The filter no longer applies to these, so decrypt any working copy
+		// still holding ciphertext before it is re-added as plaintext.
+		for _, p := range leaving {
+			path := filepath.Join(r.Root, filepath.FromSlash(p))
+			data, err := os.ReadFile(path)
+			if err != nil || !crypt.IsEncrypted(data) {
+				continue
+			}
+			plain, err := c.Decrypt(data)
+			if err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			if err := os.WriteFile(path, plain, 0o644); err != nil {
+				return err
+			}
+		}
+	}
+	return r.Renormalize(append(secrets, leaving...))
+}
+
+func subtract(a, b []string) []string {
+	drop := map[string]bool{}
+	for _, x := range b {
+		drop[x] = true
+	}
+	var out []string
+	for _, x := range a {
+		if !drop[x] {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // committedPlaintext lists secrets whose HEAD version is not encrypted.
@@ -539,6 +587,9 @@ func cmdUnlock(args []string) error {
 	fs := newFlags("unlock")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	parseFlags(fs, args)
+	if err := gitx.CheckVersion(); err != nil {
+		return err
+	}
 	r, err := openInitialized()
 	if err != nil {
 		return err
@@ -565,6 +616,12 @@ func cmdUnlock(args []string) error {
 		ids = append(ids, id)
 	}
 	master, name, err := r.UnwrapMasterKey(ids)
+	if err != nil && !errors.Is(err, repo.ErrNoAccess) {
+		if strings.Contains(err.Error(), "decryption password incorrect") {
+			return errors.New("incorrect passphrase for your SSH key; nothing was unlocked")
+		}
+		return err
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kis: none of your keys has access to this repository yet.")
 		fmt.Fprintln(os.Stderr, "Send one of these public keys to someone with access and ask them to run `kis add YOUR_NAME KEY`:")
@@ -589,7 +646,19 @@ func cmdUnlock(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Secrets staged while the filter was missing are plaintext in the index;
+	// `git add` alone may skip them (unchanged stat), so re-clean them here.
+	staged, err := r.StagedPlaintext()
+	if err != nil {
+		return err
+	}
+	if err := r.Renormalize(staged); err != nil {
+		return err
+	}
 	step("unlocked as %s; decrypted %d file(s)", name, n)
+	if len(staged) > 0 {
+		step("re-encrypted staged %s", strings.Join(staged, ", "))
+	}
 	return nil
 }
 
