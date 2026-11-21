@@ -1,6 +1,9 @@
 package gitx
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseVersion(t *testing.T) {
 	for in, want := range map[string][3]int{
@@ -20,6 +23,24 @@ func TestParseVersion(t *testing.T) {
 		}
 		if err != nil || got != want {
 			t.Errorf("%q: got %v, %v", in, got, err)
+		}
+	}
+}
+
+func TestSupported(t *testing.T) {
+	for v, want := range map[[3]int]bool{
+		{2, 28, 0}: true, {2, 27, 9}: false, {2, 55, 0}: true, {3, 0, 0}: true, {1, 99, 0}: false,
+	} {
+		if Supported(v) != want {
+			t.Errorf("%v: got %v", v, !want)
+		}
+	}
+}
+
+func TestUpgradeHint(t *testing.T) {
+	for goos, want := range map[string]string{"darwin": "brew install git", "windows": "winget", "linux": "ppa:git-core/ppa"} {
+		if h := UpgradeHint(goos); !strings.Contains(h, want) {
+			t.Errorf("%s: hint %q missing %q", goos, h, want)
 		}
 	}
 }
