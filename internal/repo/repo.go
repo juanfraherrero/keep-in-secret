@@ -46,9 +46,13 @@ func Open() (*Repo, error) {
 	if err != nil {
 		return nil, errors.New("not inside a git repository (run `git init` first)")
 	}
-	gitDir, err := gitx.Run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	// --path-format=absolute needs git 2.31; resolve the path ourselves.
+	gitDir, err := gitx.Run(root, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return nil, err
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
 	}
 	return &Repo{Root: root, GitDir: gitDir}, nil
 }
