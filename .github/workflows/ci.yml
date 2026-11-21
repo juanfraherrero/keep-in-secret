@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: git --version
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - name: scenarios (verbose on failure)
+        if: failure()
+        run: go test -count=1 -run TestScripts -v ./cmd/kis
+
+  git-versions:
+    name: git ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["git:2.28.0", "git:2.30.2", "ubuntu:22.04", "debian:12", "ubuntu:24.04", "alpine:3.20", "fedora:41", "git:2.55.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: test/docker/run.sh "${{ matrix.target }}"
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make fuzz FUZZTIME=30s
