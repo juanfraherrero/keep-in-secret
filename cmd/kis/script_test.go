@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -19,6 +24,7 @@ import (
 
 	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
 	"github.com/rogpeppe/go-internal/testscript"
+	"golang.org/x/crypto/ssh"
 )
 
 // End-to-end scenarios live in testdata/script/*.txtar. Each one is a terminal
@@ -232,6 +238,50 @@ var scriptCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 		st.github[args[0]] = ts.ReadFile(args[1])
 	},
 
+	// sshkey [-rsa] [-passphrase P] COMMENT PATH: write an OpenSSH key pair
+	// (PATH and PATH.pub) without depending on ssh-keygen being installed.
+	"sshkey": func(ts *testscript.TestScript, neg bool, args []string) {
+		rsaKey, passphrase := false, ""
+		for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+			switch args[0] {
+			case "-rsa":
+				rsaKey, args = true, args[1:]
+			case "-passphrase":
+				if len(args) < 2 {
+					ts.Fatalf("-passphrase needs a value")
+				}
+				passphrase, args = args[1], args[2:]
+			default:
+				ts.Fatalf("unknown flag %s", args[0])
+			}
+		}
+		if neg || len(args) != 2 {
+			ts.Fatalf("usage: sshkey [-rsa] [-passphrase P] COMMENT PATH")
+		}
+		comment, path := args[0], ts.MkAbs(args[1])
+		var priv crypto.Signer
+		var err error
+		if rsaKey {
+			priv, err = rsa.GenerateKey(rand.Reader, 2048)
+		} else {
+			_, priv, err = ed25519.GenerateKey(rand.Reader)
+		}
+		ts.Check(err)
+		var block *pem.Block
+		if passphrase != "" {
+			block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, comment, []byte(passphrase))
+		} else {
+			block, err = ssh.MarshalPrivateKey(priv, comment)
+		}
+		ts.Check(err)
+		pub, err := ssh.NewPublicKey(priv.Public())
+		ts.Check(err)
+		ts.Check(os.MkdirAll(filepath.Dir(path), 0o700))
+		ts.Check(os.WriteFile(path, pem.EncodeToMemory(block), 0o600))
+		line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub))) + " " + comment + "\n"
+		ts.Check(os.WriteFile(path+".pub", []byte(line), 0o644))
+	},
+
 	// pubkey VAR: store the current person's first public key in $VAR.
 	"pubkey": func(ts *testscript.TestScript, neg bool, args []string) {
 		if neg || len(args) != 1 {
@@ -249,11 +299,6 @@ var scriptCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 }
 
 func scriptCondition(cond string) (bool, error) {
-	switch cond {
-	case "ssh-keygen":
-		_, err := exec.LookPath("ssh-keygen")
-		return err == nil, nil
-	}
 	return false, fmt.Errorf("unknown condition %q", cond)
 }
 

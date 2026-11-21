@@ -1,7 +1,6 @@
 # kis init --ssh uses ~/.ssh/id_ed25519 and makes SSH the default for partners.
-[!ssh-keygen] skip 'needs ssh-keygen'
 
-exec ssh-keygen -q -t ed25519 -N '' -C owner@laptop -f $HOME/.ssh/id_ed25519
+sshkey owner@laptop $HOME/.ssh/id_ed25519
 
 cd app
 exec git init -q

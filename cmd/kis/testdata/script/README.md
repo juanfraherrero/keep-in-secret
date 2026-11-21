@@ -36,9 +36,10 @@ Lines are commands; `!` in front expects failure (or negates an assertion);
 | `snapshot NAME` | Remember every file in the repo: working tree plus `.git/config`, `.git/hooks/`, `.git/kis/` |
 | `changed NAME +a ~m -d` | **Exactly** these files were added / modified / deleted since `snapshot NAME` (globs allowed) |
 | `github USER FILE` | Serve FILE as `https://github.com/USER.keys` (for `kis add NAME github:USER`) |
+| `sshkey [-rsa] [-passphrase P] COMMENT PATH` | Write an OpenSSH key pair (no ssh-keygen needed) |
 | `pubkey VAR` | Run `kis pubkey` and store the current person's first public key in `$VAR` |
 
-Conditions: `[ssh-keygen]` (ssh-keygen available), plus testscript's built-ins
+Conditions: testscript's built-ins
 (`[unix]`, `[windows]`, `[darwin]`, `[exec:prog]`, …).
 
 Standard testscript commands (`exec`, `stdout`, `stderr`, `cmp`, `grep`, `exists`,

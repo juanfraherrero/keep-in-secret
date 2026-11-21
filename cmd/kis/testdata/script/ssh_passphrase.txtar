@@ -1,9 +1,8 @@
 # Passphrase-protected SSH keys work without ssh-agent: kis prompts once, on
 # the terminal, at unlock time.
 [!unix] skip 'needs a pseudo-terminal'
-[!ssh-keygen] skip 'needs ssh-keygen'
 
-exec ssh-keygen -q -t ed25519 -N 'open sesame' -C owner@laptop -f $HOME/.ssh/id_ed25519
+sshkey -passphrase 'open sesame' owner@laptop $HOME/.ssh/id_ed25519
 
 cd app
 exec git init -q

@@ -1,11 +1,10 @@
 # Interactive kis init: pick an existing SSH key from the menu, accept
 # defaults, and add a partner from GitHub, all typed into a real terminal.
 [!unix] skip 'needs a pseudo-terminal'
-[!ssh-keygen] skip 'needs ssh-keygen'
 
-exec ssh-keygen -q -t ed25519 -N '' -C owner@laptop -f $HOME/.ssh/id_ed25519
+sshkey owner@laptop $HOME/.ssh/id_ed25519
 as ana
-exec ssh-keygen -q -t ed25519 -N '' -C ana@laptop -f $HOME/.ssh/id_ed25519
+sshkey ana@laptop $HOME/.ssh/id_ed25519
 github ana $HOME/.ssh/id_ed25519.pub
 as owner
 
