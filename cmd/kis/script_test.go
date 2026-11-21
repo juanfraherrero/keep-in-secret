@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -103,6 +104,12 @@ func setPerson(work string, setenv func(k, v string), name string) error {
 	setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	setenv("APPDATA", filepath.Join(home, "AppData"))
 	setenv("PERSON", name)
+	// Where `kis keygen` puts this person's key on the current OS.
+	key := filepath.Join(home, ".config", "kis", "identity")
+	if runtime.GOOS == "windows" {
+		key = filepath.Join(home, "AppData", "kis", "identity")
+	}
+	setenv("KIS_KEY", key)
 	return nil
 }
 

@@ -26,7 +26,7 @@ stdout '✓ added ana \(1 key\(s\), ssh\)'
 stdout 'This repo uses SSH keys'
 
 # The menu choice was honoured: no kis key was generated.
-! exists $HOME/.config/kis/identity
+! exists $KIS_KEY
 grep 'default_key = "ssh"' .kis/config.toml
 grep '^owner = \["ssh-ed25519 .* owner@laptop"\]$' .kis/recipients.toml
 grep '^ana = \["ssh-ed25519 .* ana@laptop"\]$' .kis/recipients.toml
@@ -38,7 +38,7 @@ exec git init -q other
 cd other
 exec kis init --name ci
 ! stderr 'Choose'
-exists $HOME/.config/kis/identity
+exists $KIS_KEY
 -- answers --
 1
 

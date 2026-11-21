@@ -22,7 +22,7 @@ exec kis init -y --name owner
 stderr 'invalid name "bad name"'
 ! exec kis add bob not-a-key
 stderr 'not a public key'
-! exec kis add bob $HOME/.config/kis/identity
+! exec kis add bob $KIS_KEY
 stderr 'is a private key; pass the public key instead'
 ! exec kis add bob 'sk-ssh-ed25519@openssh.com AAAA'
 stderr 'unsupported key type'

@@ -22,6 +22,8 @@ Lines are commands; `!` in front expects failure (or negates an assertion);
 | `$REMOTE` | A bare repo every person can push to and pull from (plays GitHub) |
 | `$HOME` | The current person's home: `$WORK/home/<person>` (own keys and git identity) |
 | `$PERSON` | The current person's name (starts as `owner`) |
+| `$KIS_KEY` | Where `kis keygen` stores this person's key on the current OS |
+| `$REAL_GIT` | The real git binary (for fake-git wrappers) |
 
 ## Commands added by kis
 

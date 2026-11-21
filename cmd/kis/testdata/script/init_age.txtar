@@ -5,7 +5,7 @@ exec git init -q
 snapshot before
 
 exec kis init -y --name owner
-stdout '✓ created your key at .*home/owner/.config/kis/identity'
+stdout '✓ created your key at .*home[/\\]owner[/\\].*identity'
 stdout '✓ created \.gitencrypt'
 stdout '✓ created repository key, encrypted for owner \(age key'
 stdout '✓ configured git filters and pre-commit check'
@@ -20,8 +20,8 @@ stdout 'They run `kis keygen`'
 changed before +.gitencrypt +.gitattributes ~.gitignore +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/hooks/pre-commit +.git/kis/key
 
 # The personal key lives outside the repo, private.
-exists $HOME/.config/kis/identity
-grep '^AGE-SECRET-KEY-' $HOME/.config/kis/identity
+exists $KIS_KEY
+grep '^AGE-SECRET-KEY-' $KIS_KEY
 
 # Committed state.
 cmp .gitencrypt $WORK/want/gitencrypt

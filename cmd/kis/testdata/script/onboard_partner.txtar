@@ -13,7 +13,7 @@ exec git push -q -u origin main
 as partner
 cd $WORK
 exec kis keygen
-stdout 'Created your kis key at .*home/partner/.config/kis/identity'
+stdout 'Created your kis key at .*home[/\\]partner[/\\].*identity'
 stdout '^    age1[a-z0-9]+$'
 stdout 'They run:  kis add YOUR_NAME age1'
 pubkey PARTNER_KEY
