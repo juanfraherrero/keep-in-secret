@@ -17,7 +17,11 @@ kis unlock          # what partners run after cloning
 
 ## Install
 
-Requires Go and git.
+> [!IMPORTANT]
+> **kis requires git 2.28 or newer.** Check with `git --version`. Older git
+> resolves `!` patterns in `.gitattributes` differently, which could encrypt the
+> wrong files, so `kis init` and `kis unlock` refuse to run on it and print the
+> upgrade command for your OS.
 
 ```sh
 go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
@@ -25,6 +29,34 @@ go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
 
 Or from a clone: `make install` (also links `git-kis`, so `git kis …` works).
 Everyone who works on the repository installs `kis` once, like `git-lfs`.
+
+### Requirements
+
+| | Minimum | Notes |
+|---|---|---|
+| git | **2.28** | Tested in CI on 2.28, 2.30, 2.34, 2.39, 2.43, 2.45, 2.52 and 2.55 |
+| Go | 1.27 | Only to build kis; not needed at runtime |
+| OS | macOS, Linux, Windows | All three run the full test suite in CI |
+
+### Upgrading git
+
+| OS | Command |
+|---|---|
+| macOS | `brew install git`, then open a new terminal |
+| Windows | `winget install --id Git.Git -e` or [git-scm.com](https://git-scm.com/download/win) |
+| Ubuntu | `sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git` |
+| Debian | `sudo apt install git` (Debian 11 and newer ship a supported git) |
+| Fedora / RHEL | `sudo dnf install git` |
+| Alpine | `apk add git` |
+
+`kis status` shows the git version it found and flags it if it's too old.
+
+### Upgrading kis
+
+After upgrading kis in a repository that was set up with an older version, run
+`kis sync` once and commit. The generated `.gitattributes` block gained
+`merge=kis` and directory-aware patterns; the pre-commit check reminds you if
+you forget.
 
 ## How it works
 
@@ -39,7 +71,8 @@ working tree (.env plaintext)
 ```
 
 - `.gitencrypt` is translated into a managed block in `.gitattributes`
-  (`.env filter=kis diff=kis`), so git routes those files through kis.
+  (`.env filter=kis diff=kis merge=kis`), so git routes those files through kis.
+  Patterns behave exactly like `.gitignore` (checked against git in the tests).
 - Each repository has one random **master key**. Files are encrypted with it using
   AES-256-GCM with a synthetic nonce (HMAC-SHA256 of the content): deterministic, so
   git doesn't see changes that aren't there, and authenticated.
@@ -49,6 +82,9 @@ working tree (.env plaintext)
 - After `kis unlock`, the master key is cached in `.git/kis/key` (never committed).
 - A pre-commit check blocks any commit that would store a `.gitencrypt` file in
   plaintext, or where `.gitattributes` is out of date.
+- Merges of encrypted files work like normal text merges: kis decrypts both
+  sides, merges, and stores the result encrypted. Conflict markers show up in
+  your working copy as plaintext.
 
 Crypto details, file format and the git filter protocol are in
 [docs/how-it-works.md](docs/how-it-works.md).
@@ -126,9 +162,18 @@ what kis suggests to new partners.
 ## Development
 
 ```sh
-make test     # unit + end-to-end tests (drive real git repos)
-make build    # ./bin/kis and ./bin/git-kis (so `git kis …` works)
+make build        # ./bin/kis and ./bin/git-kis (so `git kis …` works)
+make test         # vet, unit tests and every end-to-end scenario
+make test-e2e     # just the scenarios, verbose
+make test-update  # rewrite expected output after an intentional change
+make test-docker  # whole suite across git 2.28 → 2.55 and Linux distros (needs Docker / Colima)
+make fuzz         # fuzz decryption and the git filter protocol (FUZZTIME=30s)
 ```
+
+End-to-end scenarios live in [`cmd/kis/testdata/script/`](cmd/kis/testdata/script/):
+each `.txtar` file is one user journey written like a terminal session, with
+assertions on output and on exactly which files every command changed. See its
+[README](cmd/kis/testdata/script/README.md) for the scenario language.
 
 The website is a single static file, `docs/index.html` (GitHub Pages: deploy from
 the `/docs` folder on `main`).
