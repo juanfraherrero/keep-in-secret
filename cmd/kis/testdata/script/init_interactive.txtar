@@ -1,0 +1,54 @@
+# Interactive kis init: pick an existing SSH key from the menu, accept
+# defaults, and add a partner from GitHub, all typed into a real terminal.
+[!unix] skip 'needs a pseudo-terminal'
+[!ssh-keygen] skip 'needs ssh-keygen'
+
+exec ssh-keygen -q -t ed25519 -N '' -C owner@laptop -f $HOME/.ssh/id_ed25519
+as ana
+exec ssh-keygen -q -t ed25519 -N '' -C ana@laptop -f $HOME/.ssh/id_ed25519
+github ana $HOME/.ssh/id_ed25519.pub
+as owner
+
+cd app
+exec git init -q
+ttyin -stdin $WORK/answers
+exec kis init
+stderr 'Which key do you want to use to unlock this repository\?'
+stderr '1\) Use existing ssh key  .*/\.ssh/id_ed25519'
+stderr '2\) Create a new kis key \(recommended\)'
+stderr 'Choose \[2\]: '
+stderr 'Your name \(as partners will see it\) \[owner\]: '
+stderr 'Stop ignoring them so they are shared \(encrypted\)\? \[Y/n\]: '
+stderr 'Add and encrypt \.env now\? \[Y/n\]: '
+stderr 'Add partners now\? \[y/N\]: '
+stderr 'Partner name \(empty to finish\): '
+stdout '✓ added ana \(1 key\(s\), ssh\)'
+stdout 'This repo uses SSH keys'
+
+# The menu choice was honoured: no kis key was generated.
+! exists $HOME/.config/kis/identity
+grep 'default_key = "ssh"' .kis/config.toml
+grep '^owner = \["ssh-ed25519 .* owner@laptop"\]$' .kis/recipients.toml
+grep '^ana = \["ssh-ed25519 .* ana@laptop"\]$' .kis/recipients.toml
+stored : .env
+
+# Not a terminal (CI, pipes): prompts are skipped and defaults used.
+cd $WORK
+exec git init -q other
+cd other
+exec kis init --name ci
+! stderr 'Choose'
+exists $HOME/.config/kis/identity
+-- answers --
+1
+
+y
+y
+y
+ana
+github:ana
+
+-- app/.gitignore --
+.env
+-- app/.env --
+K=1
