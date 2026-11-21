@@ -1,4 +1,4 @@
-.PHONY: build test install
+.PHONY: build test test-e2e test-update install
 
 build:
 	go build -o bin/kis ./cmd/kis
@@ -7,6 +7,12 @@ build:
 test:
 	go vet ./...
 	go test ./...
+
+test-e2e:
+	go test ./cmd/kis -run TestScripts -v
+
+test-update:
+	go test ./cmd/kis -run TestScripts -update
 
 install:
 	go install ./cmd/kis

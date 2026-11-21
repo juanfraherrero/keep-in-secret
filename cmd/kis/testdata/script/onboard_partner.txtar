@@ -1,0 +1,103 @@
+# Full team lifecycle: owner sets up, partner joins, both edit, partner is removed.
+
+# --- owner sets up and pushes ---
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+# --- partner creates a key and clones without access ---
+as partner
+cd $WORK
+exec kis keygen
+stdout 'Created your kis key at .*home/partner/.config/kis/identity'
+stdout '^    age1[a-z0-9]+$'
+stdout 'They run:  kis add YOUR_NAME age1'
+pubkey PARTNER_KEY
+
+# Running keygen again keeps the key and reprints it.
+exec kis keygen
+stdout 'You already have a kis key'
+stdout $PARTNER_KEY
+
+exec git clone -q $REMOTE p
+cd p
+encrypted .env
+! exec kis unlock
+stderr 'none of your keys has access'
+stderr $PARTNER_KEY
+! exists .git/kis/key
+
+# --- owner grants access ---
+as owner
+cd $WORK/app
+snapshot before-add
+exec kis add partner $PARTNER_KEY
+stdout '✓ added partner \(1 key\(s\), age\)'
+stdout 'ask partner to run:  kis unlock'
+changed before-add ~.kis/recipients.toml +.kis/keys/partner.age
+grep '^partner = \["age1' .kis/recipients.toml
+! exec kis add partner $PARTNER_KEY
+stderr 'partner already has access; use --force'
+exec git commit -qm 'add partner'
+exec git push -q
+
+# --- partner pulls and unlocks ---
+as partner
+cd $WORK/p
+exec git pull -q
+snapshot before-unlock
+exec kis unlock
+stdout '✓ unlocked as partner; decrypted 1 file\(s\)'
+changed before-unlock ~.env ~.git/config +.git/hooks/pre-commit +.git/kis/key
+cmp .env $WORK/v1
+exec git status --porcelain
+! stdout .
+
+# --- partner edits, owner receives ---
+cp $WORK/v2 .env
+exec git diff
+stdout '^-DB_PASS=hunter2$'
+stdout '^\+DB_PASS=correct-horse$'
+exec git commit -qam 'new password'
+stored HEAD .env
+exec git push -q
+
+as owner
+cd $WORK/app
+exec git pull -q
+cmp .env $WORK/v2
+
+# --- owner removes partner: key rotates, new commits are unreadable for them ---
+snapshot before-remove
+exec kis remove partner
+stdout '✓ new repository key for owner; re-encrypted 1 file\(s\)'
+stdout '✓ removed partner'
+stdout 'partner can still read every secret in past commits'
+changed before-remove ~.kis/recipients.toml ~.kis/keys/owner.age -.kis/keys/partner.age ~.git/kis/key
+! grep partner .kis/recipients.toml
+cmp .env $WORK/v2
+exec git status --porcelain
+stdout '^M  .env$'
+exec git commit -qm 'remove partner'
+exec git push -q
+
+as partner
+cd $WORK/p
+exec git pull -q
+stderr 'cannot decrypt .env'
+encrypted .env
+exec kis lock --force
+! exec kis unlock
+
+# The removed partner can still read history: documented, expected.
+exec git show HEAD~1:.env
+-- app/.env --
+DB_PASS=hunter2
+-- v1 --
+DB_PASS=hunter2
+-- v2 --
+DB_PASS=correct-horse
