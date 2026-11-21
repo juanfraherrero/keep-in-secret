@@ -39,6 +39,7 @@ func init() {
 		{name: "filter-process", run: cmdFilterProcess, hidden: true},
 		{name: "textconv", run: cmdTextconv, hidden: true},
 		{name: "precommit", run: cmdPrecommit, hidden: true},
+		{name: "merge", run: cmdMerge, hidden: true},
 	}
 }
 

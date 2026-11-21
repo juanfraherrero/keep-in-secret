@@ -41,6 +41,8 @@ func (r *Repo) ConfigureGit() error {
 		{"filter.kis.smudge", bin + " smudge %f"},
 		{"filter.kis.required", "true"},
 		{"diff.kis.textconv", bin + " textconv"},
+		{"merge.kis.name", "kis: merge encrypted files as text"},
+		{"merge.kis.driver", bin + " merge %O %A %B %L %P"},
 	} {
 		if _, err := r.Git("config", "--local", kv[0], kv[1]); err != nil {
 			return err

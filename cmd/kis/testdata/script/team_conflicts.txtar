@@ -1,0 +1,70 @@
+# Two people add partners at the same time: recipients.toml merges via
+# merge=union, and both new partners can unlock.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+as ana
+exec kis keygen
+pubkey ANA
+as bob
+exec kis keygen
+pubkey BOB
+as carol
+exec kis keygen
+pubkey CAROL
+
+# owner gives ana access and pushes.
+as owner
+cd $WORK/app
+exec kis add ana $ANA
+exec git commit -qm 'add ana'
+exec git push -q
+# ana adds bob, owner adds carol, concurrently.
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+exec kis add bob $BOB
+exec git commit -qm 'add bob'
+exec git push -q
+
+as owner
+cd $WORK/app
+exec kis add carol $CAROL
+exec git commit -qm 'add carol'
+exec git pull -q --no-edit
+grep '^bob = ' .kis/recipients.toml
+grep '^carol = ' .kis/recipients.toml
+exists .kis/keys/bob.age .kis/keys/carol.age
+exec kis status
+stdout 'ana +1 age'
+stdout 'bob +1 age'
+stdout 'carol +1 age'
+exec git push -q
+
+as bob
+cd $WORK
+exec git clone -q $REMOTE bob
+cd bob
+exec kis unlock
+stdout 'unlocked as bob'
+cmp .env $WORK/env
+
+as carol
+cd $WORK
+exec git clone -q $REMOTE carol
+cd carol
+exec kis unlock
+stdout 'unlocked as carol'
+cmp .env $WORK/env
+-- env --
+S=1
+-- app/.env --
+S=1

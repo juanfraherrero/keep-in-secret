@@ -47,14 +47,16 @@ func Block(gitencrypt string) string {
 			line += "**"
 		}
 		if negate {
-			b.WriteString(quote(line) + " !filter !diff\n")
+			b.WriteString(quote(line) + " !filter !diff !merge\n")
 		} else {
-			b.WriteString(quote(line) + " filter=kis diff=kis\n")
+			b.WriteString(quote(line) + " filter=kis diff=kis merge=kis\n")
 		}
 	}
 	for _, p := range alwaysPlain {
-		b.WriteString(p + " !filter !diff\n")
+		b.WriteString(p + " !filter !diff !merge\n")
 	}
+	// Partners added concurrently on two branches merge without conflict.
+	b.WriteString(".kis/recipients.toml merge=union\n")
 	b.WriteString(endMark + "\n")
 	return b.String()
 }

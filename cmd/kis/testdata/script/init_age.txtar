@@ -38,6 +38,8 @@ exec git config --local filter.kis.required
 stdout '^true$'
 exec git config --local diff.kis.textconv
 stdout '^kis textconv$'
+exec git config --local merge.kis.driver
+stdout '^kis merge %O %A %B %L %P$'
 grep 'kis precommit' .git/hooks/pre-commit
 
 # Attributes route the right files through kis.
@@ -46,6 +48,8 @@ attr .env.production filter kis
 attr .env.example filter unspecified
 attr .kis/keys/owner.age filter unspecified
 attr README.md filter unspecified
+attr .env merge kis
+attr .kis/recipients.toml merge union
 
 # Everything is staged: secrets encrypted, examples and kis files readable.
 exec git status --porcelain
@@ -101,13 +105,14 @@ A  .kis/recipients.toml
 !.env.template
 -- want/gitattributes --
 # >>> kis: generated from .gitencrypt, do not edit (run `kis sync`)
-.env filter=kis diff=kis
-.env.* filter=kis diff=kis
-.env.example !filter !diff
-.env.sample !filter !diff
-.env.template !filter !diff
-.gitencrypt !filter !diff
-.gitattributes !filter !diff
-.gitignore !filter !diff
-.kis/** !filter !diff
+.env filter=kis diff=kis merge=kis
+.env.* filter=kis diff=kis merge=kis
+.env.example !filter !diff !merge
+.env.sample !filter !diff !merge
+.env.template !filter !diff !merge
+.gitencrypt !filter !diff !merge
+.gitattributes !filter !diff !merge
+.gitignore !filter !diff !merge
+.kis/** !filter !diff !merge
+.kis/recipients.toml merge=union
 # <<< kis

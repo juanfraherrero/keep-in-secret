@@ -188,6 +188,16 @@ func (r *Repo) ForgetMasterKey() error {
 	return err
 }
 
+// TempDir creates a private scratch directory inside .git/kis for plaintext
+// that must briefly touch disk. Callers remove it.
+func (r *Repo) TempDir() (string, error) {
+	dir := filepath.Join(r.GitDir, "kis")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(dir, "tmp-")
+}
+
 func (r *Repo) Cipher() (*crypt.Cipher, error) {
 	k, err := r.MasterKey()
 	if err != nil {
