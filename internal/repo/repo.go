@@ -282,6 +282,16 @@ func (r *Repo) TrackedSecrets() ([]string, error) {
 	return r.filterMatches(files, false)
 }
 
+// IndexedSecrets lists tracked files that the staged .gitattributes marks for
+// encryption, i.e. what was encrypted before a pending .gitencrypt change.
+func (r *Repo) IndexedSecrets() ([]string, error) {
+	files, err := r.lsFiles()
+	if err != nil {
+		return nil, err
+	}
+	return r.filterMatches(files, true)
+}
+
 // UntrackedSecrets lists untracked files matching .gitencrypt, split into
 // those that can be added and those hidden by .gitignore.
 func (r *Repo) UntrackedSecrets() (addable, ignored []string, err error) {
