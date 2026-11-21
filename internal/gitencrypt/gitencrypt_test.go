@@ -10,7 +10,8 @@ func TestBlock(t *testing.T) {
 	for _, want := range []string{
 		".env filter=kis diff=kis merge=kis\n",
 		".env.example !filter !diff !merge\n",
-		"secrets/** filter=kis diff=kis merge=kis\n",
+		"**/secrets/** filter=kis diff=kis merge=kis\n",
+		"**/.env/** filter=kis diff=kis merge=kis\n",
 		`"my file.txt" filter=kis diff=kis merge=kis` + "\n",
 		".kis/** !filter !diff !merge\n",
 	} {

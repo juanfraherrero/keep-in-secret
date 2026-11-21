@@ -9,6 +9,7 @@ stdout 'using existing \.gitencrypt'
 attr secrets/db.json filter kis
 attr secrets/nested/deep.key filter kis
 attr secrets/README.md filter unspecified
+attr services/secrets/token filter kis
 attr services/api/.env filter kis
 attr config/prod.yaml filter kis
 attr sub/config/prod.yaml filter unspecified
@@ -19,7 +20,7 @@ attr README.md filter unspecified
 
 exec git add .
 exec git commit -qm init
-stored HEAD secrets/db.json secrets/nested/deep.key services/api/.env config/prod.yaml 'my keys.txt' certs/server.pem
+stored HEAD services/secrets/token secrets/db.json secrets/nested/deep.key services/api/.env config/prod.yaml 'my keys.txt' certs/server.pem
 ! stored HEAD secrets/README.md sub/config/prod.yaml certs/public.pem README.md
 
 # Removing a pattern turns the file back into plaintext in git after sync.
@@ -69,6 +70,8 @@ readme
 deep
 -- app/secrets/README.md --
 what goes here
+-- app/services/secrets/token --
+nested secrets dir
 -- app/services/api/.env --
 API=1
 -- app/config/prod.yaml --

@@ -41,15 +41,12 @@ func Block(gitencrypt string) string {
 		if negate {
 			line = line[1:]
 		}
-		line = strings.TrimPrefix(line, `\`) // gitignore escape for leading # or !
-		if strings.HasSuffix(line, "/") {
-			// gitattributes patterns never match directories themselves.
-			line += "**"
-		}
+		attrs := " filter=kis diff=kis merge=kis\n"
 		if negate {
-			b.WriteString(quote(line) + " !filter !diff !merge\n")
-		} else {
-			b.WriteString(quote(line) + " filter=kis diff=kis merge=kis\n")
+			attrs = " !filter !diff !merge\n"
+		}
+		for _, p := range attrPatterns(line) {
+			b.WriteString(quote(p) + attrs)
 		}
 	}
 	for _, p := range alwaysPlain {
@@ -59,6 +56,24 @@ func Block(gitencrypt string) string {
 	b.WriteString(".kis/recipients.toml merge=union\n")
 	b.WriteString(endMark + "\n")
 	return b.String()
+}
+
+// attrPatterns translates one gitignore pattern into gitattributes patterns
+// with the same reach. gitattributes only ever matches files, so a pattern
+// that could name a directory also gets a "/**" form for its contents, and a
+// pattern without a slash keeps matching at any depth via "**/". Backslash
+// escapes (\#, \!) are valid in both syntaxes and pass through unchanged.
+func attrPatterns(p string) []string {
+	dirOnly := strings.HasSuffix(p, "/")
+	p = strings.TrimSuffix(p, "/")
+	contents := "**/" + p + "/**"
+	if strings.Contains(p, "/") { // anchored to the .gitencrypt directory
+		contents = p + "/**"
+	}
+	if dirOnly {
+		return []string{contents}
+	}
+	return []string{p, contents}
 }
 
 func quote(p string) string {
