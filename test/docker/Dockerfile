@@ -12,7 +12,7 @@ RUN if [ -n "$GIT_VERSION" ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
         build-essential curl ca-certificates gettext libcurl4-openssl-dev libexpat1-dev libssl-dev zlib1g-dev openssh-client make && \
       curl -fsSL "https://mirrors.edge.kernel.org/pub/software/scm/git/git-$GIT_VERSION.tar.gz" | tar xz -C /tmp && \
-      make -C "/tmp/git-$GIT_VERSION" -j"$(nproc)" prefix=/usr/local NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 all install >/dev/null && \
+      make -C "/tmp/git-$GIT_VERSION" -j"$(nproc)" prefix=/usr/local NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 NO_RUST=1 all install >/dev/null && \
       rm -rf "/tmp/git-$GIT_VERSION" /var/lib/apt/lists/*; \
     elif command -v apt-get >/dev/null; then \
       apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates make && rm -rf /var/lib/apt/lists/*; \

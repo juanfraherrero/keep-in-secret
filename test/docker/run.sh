@@ -7,7 +7,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 
-targets=${*:-"git:2.31.0 ubuntu:22.04 debian:12 ubuntu:24.04 alpine:3.20 fedora:41 git:2.55.0"}
+targets=${*:-"git:2.28.0 git:2.30.2 ubuntu:22.04 debian:12 ubuntu:24.04 alpine:3.20 fedora:41 git:2.55.0"}
 platform=${PLATFORM:+--platform $PLATFORM}
 failed=""
 
