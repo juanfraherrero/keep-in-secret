@@ -646,7 +646,19 @@ func cmdUnlock(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Secrets staged while the filter was missing are plaintext in the index;
+	// `git add` alone may skip them (unchanged stat), so re-clean them here.
+	staged, err := r.StagedPlaintext()
+	if err != nil {
+		return err
+	}
+	if err := r.Renormalize(staged); err != nil {
+		return err
+	}
 	step("unlocked as %s; decrypted %d file(s)", name, n)
+	if len(staged) > 0 {
+		step("re-encrypted staged %s", strings.Join(staged, ", "))
+	}
 	return nil
 }
 

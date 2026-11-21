@@ -84,7 +84,7 @@ func cmdPrecommit([]string) error {
 	}
 	if len(bad) > 0 {
 		fmt.Fprintf(os.Stderr, "kis: commit blocked, these files would be stored in PLAINTEXT:\n    %s\n", strings.Join(bad, "\n    "))
-		fmt.Fprintln(os.Stderr, "     Run `kis unlock` (or `kis sync`) and `git add` them again.")
+		fmt.Fprintln(os.Stderr, "     Run `kis sync` to encrypt them (or `kis unlock` first if this clone is locked).")
 		return exitError{}
 	}
 	return nil

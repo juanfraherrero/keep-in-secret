@@ -27,7 +27,8 @@ exec git add .env.local
 stderr 'commit blocked, these files would be stored in PLAINTEXT'
 stderr '    .env.local'
 exec kis unlock
-exec git add .env.local
+stdout '✓ re-encrypted staged \.env\.local'
+stored : .env.local
 exec git commit -qm 'local env'
 stored HEAD .env.local
 
