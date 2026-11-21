@@ -1,0 +1,46 @@
+# Passphrase-protected SSH keys work without ssh-agent: kis prompts once, on
+# the terminal, at unlock time.
+[!unix] skip 'needs a pseudo-terminal'
+[!ssh-keygen] skip 'needs ssh-keygen'
+
+exec ssh-keygen -q -t ed25519 -N 'open sesame' -C owner@laptop -f $HOME/.ssh/id_ed25519
+
+cd app
+exec git init -q
+# init only needs the public half: no prompt.
+exec kis init --ssh -y --name owner
+! stderr 'Passphrase'
+exec git add .
+exec git commit -qm init
+exec kis lock
+
+# Wrong passphrase: clear error, still locked.
+ttyin -stdin $WORK/wrong
+! exec kis unlock
+stderr 'Passphrase for .*id_ed25519: '
+stderr 'incorrect passphrase'
+encrypted .env
+
+# Right passphrase: unlocked, asked exactly once.
+ttyin -stdin $WORK/right
+exec kis unlock
+stderr -count=1 'Passphrase for'
+stdout 'unlocked as owner; decrypted 1 file\(s\)'
+cmp .env $WORK/env
+
+# After unlocking, everyday git never asks again (no terminal attached here).
+cp $WORK/env2 .env
+exec git commit -qam change
+stored HEAD .env
+exec git log -p -1
+stdout '^\+K=2$'
+-- wrong --
+nope
+-- right --
+open sesame
+-- app/.env --
+K=1
+-- env --
+K=1
+-- env2 --
+K=2

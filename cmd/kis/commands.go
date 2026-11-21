@@ -610,6 +610,12 @@ func cmdUnlock(args []string) error {
 		ids = append(ids, id)
 	}
 	master, name, err := r.UnwrapMasterKey(ids)
+	if err != nil && !errors.Is(err, repo.ErrNoAccess) {
+		if strings.Contains(err.Error(), "decryption password incorrect") {
+			return errors.New("incorrect passphrase for your SSH key; nothing was unlocked")
+		}
+		return err
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kis: none of your keys has access to this repository yet.")
 		fmt.Fprintln(os.Stderr, "Send one of these public keys to someone with access and ask them to run `kis add YOUR_NAME KEY`:")

@@ -28,6 +28,7 @@ const (
 
 var ErrLocked = errors.New("repository is locked: run `kis unlock`")
 var ErrNotInitialized = errors.New("kis is not set up in this repository: run `kis init`")
+var ErrNoAccess = errors.New("none of your keys can unlock this repository")
 
 type Config struct {
 	Version    int    `toml:"version"`
@@ -151,8 +152,13 @@ func (r *Repo) UnwrapMasterKey(ids []age.Identity) ([]byte, string, error) {
 		if err == nil && len(master) == crypt.KeySize {
 			return master, strings.TrimSuffix(filepath.Base(f), ".age"), nil
 		}
+		// A key matched but could not be used (e.g. wrong SSH passphrase).
+		var noMatch *age.NoIdentityMatchError
+		if err != nil && !errors.As(err, &noMatch) {
+			return nil, "", err
+		}
 	}
-	return nil, "", errors.New("none of your keys can unlock this repository")
+	return nil, "", ErrNoAccess
 }
 
 // Master key cache: .git/kis/key, never committed.
