@@ -283,6 +283,19 @@ var scriptCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 	},
 
 	// pubkey VAR: store the current person's first public key in $VAR.
+	// binfile PATH: write a binary file holding every byte value, NULs and
+	// CR/LF included, as a keystore would.
+	"binfile": func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) != 1 {
+			ts.Fatalf("usage: binfile PATH")
+		}
+		data := make([]byte, 0, 512)
+		for i := 0; i < 512; i++ {
+			data = append(data, byte(i*7))
+		}
+		ts.Check(os.WriteFile(ts.MkAbs(args[0]), data, 0o644))
+	},
+
 	"pubkey": func(ts *testscript.TestScript, neg bool, args []string) {
 		if neg || len(args) != 1 {
 			ts.Fatalf("usage: pubkey VAR")

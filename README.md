@@ -10,7 +10,13 @@ never reaches git history or the remote.
 kis init            # once, in your repo
 kis add ana age1…   # give a partner access
 kis unlock          # what partners run after cloning
+kis status --check  # before every push or PR: exits 1 if a secret would leak
 ```
+
+Works with any language: kis encrypts files by path, whatever they hold.
+`.env` is the default; [presets](#other-stacks-presets) cover keystores,
+Terraform variables, Rails and Spring. Built to be driven by coding agents too:
+[see below](#coding-agents).
 
 **Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
 **Deep dive:** [docs/how-it-works.md](docs/how-it-works.md)
@@ -102,8 +108,8 @@ git commit -m "Set up kis encryption" && git push
 ```
 
 `kis init` creates `.gitencrypt` (`.env`, `.env.*`, except `.env.example`), encrypts
-matching files, offers to un-ignore `.env` from `.gitignore`, and prints the
-instructions to send to partners.
+matching files, offers to un-ignore `.env` from `.gitignore`, adds the kis section
+to `AGENTS.md`, and prints the instructions to send to partners.
 
 ## Onboarding a partner
 
@@ -122,11 +128,99 @@ instructions to send to partners.
    kis unlock
    ```
 
+## Is it safe to push?
+
+```
+$ kis status
+…
+encrypted files
+  .env                           encrypted in git
+  .env.local                     PLAINTEXT in index (run `kis sync`)
+safe to push    NO: fix the problems below before pushing
+                (only files matched by .gitencrypt are checked; other files are not scanned for secrets)
+  ✗ .env.local: staged in plaintext
+    fix: kis sync (or kis unlock first if this clone is locked)
+```
+
+When everything is fine it names what it verified:
+`safe to push    yes: .env, .env.local are encrypted in git`. kis vouches for
+the files in `.gitencrypt`, not for an API key hardcoded somewhere else; pair it
+with a secret scanner (gitleaks, GitHub secret scanning) if you need that.
+
+`kis status` checks that every secret is ciphertext in the index and in the last
+commit, and that `.gitattributes` matches `.gitencrypt`. It needs no key, so it
+also works in CI and in locked clones.
+
+- `--check` exits 1 unless it is safe to push.
+- `--since REV` also checks every commit in `REV..HEAD`, so a secret leaked in an
+  earlier commit of a pull request and "fixed" later is still caught.
+- `--json` prints the same report as data: `safe_to_push`, `encrypted_files`, each file's `state`
+  (`encrypted`, `plaintext-index`, `plaintext-head`, `untracked`, `ignored`) and
+  `problems`, each with a `severity` (`error` blocks, `warning` doesn't) and a `fix`.
+
+Run it on every pull request (GitHub Actions):
+
+```yaml
+# .github/workflows/secrets.yml
+name: secrets
+on: pull_request
+jobs:
+  kis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # --since needs the base branch
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - run: go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
+      - run: kis status --check --since origin/${{ github.base_ref }}
+```
+
+## Other stacks (presets)
+
+kis does not care what is inside a file; `.gitencrypt` decides. Not every
+ecosystem keeps secrets in `.env`, so `kis init` detects common stacks and
+offers a preset (without a terminal it prints the command instead, because
+encrypting files your CI reads in plaintext must be a deliberate choice):
+
+```sh
+kis init --preset terraform,android   # at setup
+kis sync --preset spring              # or any time later
+```
+
+| Preset | Encrypts | Detected by |
+|---|---|---|
+| `android` | `*.jks`, `*.keystore`, `keystore.properties` | `*/src/main/AndroidManifest.xml` |
+| `rails` | `config/master.key`, `config/credentials/*.key` | `config/application.rb` |
+| `spring` | `application-local.{properties,yml,yaml}` | `pom.xml`, `build.gradle(.kts)` |
+| `terraform` | `*.tfvars`, `*.tfvars.json` (not `*.tfvars.example`) | `*.tf` |
+
+Go, Rust, Python, Node, PHP and Ruby projects usually load `.env` (godotenv,
+dotenvy, python-dotenv, dotenv…), which the default covers. Anything else, such
+as `config/secrets.json` or `appsettings.Development.json`, is one line in
+`.gitencrypt` plus `kis sync`. Binary files (keystores, certificates) work too;
+they just can't be merged line by line.
+
+## Coding agents
+
+Agents are trained to never commit `.env`, so left alone they may "fix" a kis
+setup by ignoring or deleting the encrypted files. `kis init` therefore adds a
+short section to `AGENTS.md`, read by most agent tools, and to `CLAUDE.md`,
+`GEMINI.md` and `.github/copilot-instructions.md` when they exist, saying the
+files are encrypted, that `kis status --check` must pass before a push or PR,
+and not to copy secret values around. `kis sync` keeps it up to date; delete
+the section and it stays deleted, or skip it with `kis init --no-agents`.
+
+Everything an agent needs is non-interactive: without a terminal, prompts take
+their defaults (`-y` forces that), `kis status --json` reports state as data,
+and every error names the command that fixes it. A summary for LLMs lives at
+[`llms.txt`](https://juanfraherrero.github.io/keep-in-secret/llms.txt).
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `kis init [--ssh] [--identity PATH] [--name NAME] [-y]` | Set up encryption in the repo |
+| `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
 | `kis add NAME KEY\|github:USER\|FILE.pub…` | Give someone access |
@@ -134,8 +228,8 @@ instructions to send to partners.
 | `kis rotate` | New master key, re-encrypt everything |
 | `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook |
 | `kis lock [--force]` | Forget the key here and turn files back into ciphertext |
-| `kis status` | State, partners, encrypted files |
-| `kis sync` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
+| `kis status [--check] [--json] [--since REV]` | State, partners, encrypted files, and whether it is safe to push |
+| `kis sync [--preset LIST]` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
 
 ## Keys
 

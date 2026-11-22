@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
+	"github.com/juanfraherrero/keep-in-secret/internal/gitencrypt"
 	"github.com/juanfraherrero/keep-in-secret/internal/gitx"
 	"github.com/juanfraherrero/keep-in-secret/internal/keys"
 	"github.com/juanfraherrero/keep-in-secret/internal/repo"
@@ -36,9 +38,15 @@ func cmdInit(args []string) error {
 	useSSH := fs.Bool("ssh", false, "use your SSH key (~/.ssh/id_ed25519) and make SSH the default for partners")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	name := fs.String("name", "", "your name in the recipients list")
+	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
+	noAgents := fs.Bool("no-agents", false, "don't add the kis section to AGENTS.md (read by coding agents)")
 	fs.BoolVar(&assumeYes, "y", false, "accept defaults without prompting")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
+	}
+	presets, err := parsePresets(*presetFlag)
+	if err != nil {
+		return err
 	}
 
 	if err := gitx.CheckVersion(); err != nil {
@@ -74,6 +82,12 @@ func cmdInit(args []string) error {
 	} else {
 		step("using existing .gitencrypt")
 	}
+	if presets == nil {
+		presets = offerDetectedPresets(r)
+	}
+	if err := applyPresets(r, presets); err != nil {
+		return err
+	}
 
 	master := crypt.NewKey()
 	if err := r.SaveMasterKey(master); err != nil {
@@ -101,6 +115,11 @@ func cmdInit(args []string) error {
 		return err
 	}
 	step("generated .gitattributes and staged kis files")
+	if !*noAgents {
+		if err := writeAgentNotes(r, false); err != nil {
+			return err
+		}
+	}
 
 	if err := stageUntrackedSecrets(r); err != nil {
 		return err
@@ -134,6 +153,88 @@ func cmdInit(args []string) error {
 	printPartnerKeyInstructions(cfg)
 	fmt.Println("  3. Give them access:  kis add NAME KEY   (then commit and push)")
 	fmt.Println("  4. They clone and run: kis unlock")
+	return nil
+}
+
+func presetNames() string {
+	var names []string
+	for _, p := range gitencrypt.Presets {
+		names = append(names, p.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// parsePresets returns nil for an empty flag, so callers can tell "none
+// asked for" from an explicit list.
+func parsePresets(flag string) ([]gitencrypt.Preset, error) {
+	if flag == "" {
+		return nil, nil
+	}
+	var out []gitencrypt.Preset
+	for _, n := range strings.Split(flag, ",") {
+		p, err := gitencrypt.FindPreset(strings.TrimSpace(n))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// offerDetectedPresets asks about each stack found in the repository. Without
+// a terminal it only prints how to opt in: encrypting files the team may rely
+// on in plaintext (CI reading *.tfvars, say) must be a deliberate choice.
+func offerDetectedPresets(r *repo.Repo) []gitencrypt.Preset {
+	var chosen []gitencrypt.Preset
+	for _, p := range gitencrypt.Detect(r.Root) {
+		if covered(r, p) {
+			continue
+		}
+		pats := strings.Join(p.Patterns, " ")
+		if interactive() {
+			if confirm(fmt.Sprintf("%s project detected. Also encrypt its %s (%s)?", p.Name, p.Summary, pats), true) {
+				chosen = append(chosen, p)
+			}
+			continue
+		}
+		note("%s project detected; to also encrypt its %s (%s): kis sync --preset %s", p.Name, p.Summary, pats, p.Name)
+	}
+	return chosen
+}
+
+// covered reports whether .gitencrypt already lists every pattern of p.
+func covered(r *repo.Repo, p gitencrypt.Preset) bool {
+	ge, _ := r.ReadGitencrypt()
+	return gitencrypt.WithPresets(ge, []gitencrypt.Preset{p}) == ge
+}
+
+func applyPresets(r *repo.Repo, presets []gitencrypt.Preset) error {
+	if len(presets) == 0 {
+		return nil
+	}
+	changed, err := r.AddPresets(presets)
+	if err != nil || !changed {
+		return err
+	}
+	var names []string
+	for _, p := range presets {
+		names = append(names, p.Name)
+	}
+	step("added %s patterns to .gitencrypt", strings.Join(names, ", "))
+	return nil
+}
+
+// writeAgentNotes adds or refreshes the kis section coding agents read, and
+// stages it. On sync (onlyExisting) a section someone removed stays removed.
+func writeAgentNotes(r *repo.Repo, onlyExisting bool) error {
+	changed, err := r.WriteAgentNotes(onlyExisting)
+	if err != nil || len(changed) == 0 {
+		return err
+	}
+	if _, err := r.Git(append([]string{"add", "--"}, changed...)...); err != nil {
+		return err
+	}
+	step("updated %s so coding agents know these secrets are safe to commit", strings.Join(changed, ", "))
 	return nil
 }
 
@@ -692,81 +793,221 @@ func cmdLock(args []string) error {
 
 // ---- status / sync ----
 
-func cmdStatus([]string) error {
+func cmdStatus(args []string) error {
+	fs := newFlags("status")
+	check := fs.Bool("check", false, "exit with status 1 unless it is safe to push (for CI and hooks)")
+	asJSON := fs.Bool("json", false, "print machine-readable JSON")
+	since := fs.String("since", "", "also check every commit in REV..HEAD, e.g. origin/main for a pull request")
+	if pos := parseFlags(fs, args); len(pos) > 0 {
+		return fmt.Errorf("unexpected argument %q", pos[0])
+	}
+	st, err := collectStatus(*since)
+	if err != nil {
+		if *asJSON && errors.Is(err, repo.ErrNotInitialized) {
+			printJSON(statusJSON{Version: version, Scope: statusScope, Encrypted: []string{}, Files: []repo.FileStatus{}, Problems: []repo.Problem{}})
+			return exitError{}
+		}
+		return err
+	}
+	if *asJSON {
+		printJSON(st)
+	} else {
+		printStatus(st)
+	}
+	if *check && !st.SafeToPush {
+		return exitError{}
+	}
+	return nil
+}
+
+type statusJSON struct {
+	Version     string            `json:"kis_version"`
+	Initialized bool              `json:"initialized"`
+	SafeToPush  bool              `json:"safe_to_push"`
+	Repository  string            `json:"repository,omitempty"`
+	Git         *gitJSON          `json:"git,omitempty"`
+	Unlocked    bool              `json:"unlocked"`
+	GitFilters  bool              `json:"git_filters"`
+	PreCommit   bool              `json:"pre_commit_hook"`
+	InSync      bool              `json:"attributes_in_sync"`
+	DefaultKey  string            `json:"default_key,omitempty"`
+	Partners    []partnerJSON     `json:"partners,omitempty"`
+	Encrypted   []string          `json:"encrypted_files"`
+	Scope       string            `json:"scope"`
+	Files       []repo.FileStatus `json:"files"`
+	Problems    []repo.Problem    `json:"problems"`
+}
+
+const statusScope = "files matched by .gitencrypt; other files are not scanned for secrets"
+
+type gitJSON struct {
+	Version   string `json:"version"`
+	Supported bool   `json:"supported"`
+}
+
+type partnerJSON struct {
+	Name string `json:"name"`
+	Keys int    `json:"keys"`
+	Type string `json:"type"`
+}
+
+func collectStatus(since string) (statusJSON, error) {
 	r, err := openInitialized()
 	if err != nil {
-		return err
+		return statusJSON{}, err
 	}
 	cfg, err := r.LoadConfig()
 	if err != nil {
-		return err
+		return statusJSON{}, err
 	}
 	rs, err := r.LoadRecipients()
 	if err != nil {
-		return err
+		return statusJSON{}, err
 	}
-	state := "unlocked"
-	if _, err := r.MasterKey(); err != nil {
-		state = "LOCKED (run `kis unlock`)"
+	audit, err := r.Audit(since)
+	if err != nil {
+		return statusJSON{}, err
 	}
+	_, keyErr := r.MasterKey()
+	st := statusJSON{
+		Version:     version,
+		Initialized: true,
+		Scope:       statusScope,
+		Repository:  r.Root,
+		Unlocked:    keyErr == nil,
+		GitFilters:  r.GitConfigured(),
+		PreCommit:   r.HookInstalled(),
+		InSync:      r.AttributesInSync(),
+		DefaultKey:  cfg.DefaultKey,
+		Files:       audit.Files,
+		Problems:    audit.Problems,
+	}
+	if v, err := gitx.Version(); err == nil {
+		st.Git = &gitJSON{fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]), gitx.Supported(v)}
+	}
+	for _, n := range rs.Names() {
+		st.Partners = append(st.Partners, partnerJSON{n, len(rs[n]), keys.RecipientType(rs[n][0])})
+	}
+	// A clone that cannot encrypt on `git add` may leak the next commit,
+	// but CI checkouts never commit, so these only warn.
+	if st.Unlocked && !st.GitFilters {
+		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
+			Message: "git filters are not configured in this clone: `git add` would stage secrets in plaintext", Fix: "kis unlock"})
+	}
+	if st.Unlocked && !st.PreCommit {
+		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
+			Message: "the pre-commit check is not installed in this clone", Fix: "kis unlock"})
+	}
+	if st.Git != nil && !st.Git.Supported {
+		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
+			Message: fmt.Sprintf("git %s is too old: kis needs %d.%d+", st.Git.Version, gitx.MinVersion[0], gitx.MinVersion[1]), Fix: "upgrade git (run `kis unlock` for the steps on this OS)"})
+	}
+	st.SafeToPush = repo.Audit{Problems: st.Problems}.Safe()
+	if st.Problems == nil {
+		st.Problems = []repo.Problem{}
+	}
+	if st.Files == nil {
+		st.Files = []repo.FileStatus{}
+	}
+	st.Encrypted = []string{}
+	for _, f := range st.Files {
+		if f.State == repo.FileEncrypted {
+			st.Encrypted = append(st.Encrypted, f.Path)
+		}
+	}
+	return st, nil
+}
+
+func printJSON(v any) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(v)
+}
+
+func printStatus(st statusJSON) {
 	yesNo := func(ok bool, fix string) string {
 		if ok {
 			return "ok"
 		}
 		return "MISSING (run `" + fix + "`)"
 	}
-	fmt.Printf("repository      %s\n", r.Root)
-	if v, err := gitx.Version(); err == nil {
+	fmt.Printf("repository      %s\n", st.Repository)
+	if st.Git != nil {
 		note := "ok"
-		if !gitx.Supported(v) {
+		if !st.Git.Supported {
 			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+ (run `kis unlock` for upgrade steps)", gitx.MinVersion[0], gitx.MinVersion[1])
 		}
-		fmt.Printf("git             %d.%d.%d %s\n", v[0], v[1], v[2], note)
+		fmt.Printf("git             %s %s\n", st.Git.Version, note)
+	}
+	state := "unlocked"
+	if !st.Unlocked {
+		state = "LOCKED (run `kis unlock`)"
 	}
 	fmt.Printf("state           %s\n", state)
-	fmt.Printf("git filters     %s\n", yesNo(r.GitConfigured(), "kis unlock"))
-	fmt.Printf("pre-commit      %s\n", yesNo(r.HookInstalled(), "kis unlock"))
+	fmt.Printf("git filters     %s\n", yesNo(st.GitFilters, "kis unlock"))
+	fmt.Printf("pre-commit      %s\n", yesNo(st.PreCommit, "kis unlock"))
 	sync := "ok"
-	if !r.AttributesInSync() {
+	if !st.InSync {
 		sync = "OUT OF DATE (run `kis sync`)"
 	}
 	fmt.Printf(".gitattributes  %s\n", sync)
-	fmt.Printf("default key     %s\n", cfg.DefaultKey)
+	fmt.Printf("default key     %s\n", st.DefaultKey)
 	fmt.Println("partners")
-	for _, n := range rs.Names() {
-		fmt.Printf("  %-14s %d %s key(s)\n", n, len(rs[n]), keys.RecipientType(rs[n][0]))
-	}
-	secrets, err := r.TrackedSecrets()
-	if err != nil {
-		return err
+	for _, p := range st.Partners {
+		fmt.Printf("  %-14s %d %s key(s)\n", p.Name, p.Keys, p.Type)
 	}
 	fmt.Println("encrypted files")
-	if len(secrets) == 0 {
+	if len(st.Files) == 0 {
 		fmt.Println("  (none tracked yet)")
 	}
-	for _, p := range secrets {
-		s := "encrypted in git"
-		if blob, err := gitx.RunInput(r.Root, nil, "cat-file", "blob", ":"+p); err == nil && !crypt.IsEncrypted(blob) {
-			s = "PLAINTEXT in index (run `kis sync`)"
-		}
-		fmt.Printf("  %-30s %s\n", p, s)
+	for _, f := range st.Files {
+		fmt.Printf("  %-30s %s\n", f.Path, map[string]string{
+			repo.FileEncrypted:  "encrypted in git",
+			repo.FilePlainIndex: "PLAINTEXT in index (run `kis sync`)",
+			repo.FilePlainHead:  "PLAINTEXT in last commit",
+			repo.FileUntracked:  "untracked (git add it to share)",
+			repo.FileIgnored:    "ignored by .gitignore (won't be shared)",
+		}[f.State])
 	}
-	addable, ignored, err := r.UntrackedSecrets()
+	switch {
+	case !st.SafeToPush:
+		fmt.Println("safe to push    NO: fix the problems below before pushing")
+	case len(st.Encrypted) == 0:
+		fmt.Println("safe to push    yes: no secret files are tracked yet")
+	default:
+		fmt.Printf("safe to push    yes: %s %s encrypted in git\n", strings.Join(st.Encrypted, ", "), map[bool]string{true: "is", false: "are"}[len(st.Encrypted) == 1])
+	}
+	fmt.Println("                (only files matched by .gitencrypt are checked; other files are not scanned for secrets)")
+	for _, p := range st.Problems {
+		mark, where := "!", p.Path
+		if p.Severity == repo.SeverityError {
+			mark = "✗"
+		}
+		if p.Commit != "" && p.Commit != "HEAD" {
+			where += " @ " + p.Commit
+		}
+		if where != "" {
+			where += ": "
+		}
+		fmt.Printf("  %s %s%s\n    fix: %s\n", mark, where, p.Message, p.Fix)
+	}
+}
+
+func cmdSync(args []string) error {
+	fs := newFlags("sync")
+	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
+	if pos := parseFlags(fs, args); len(pos) > 0 {
+		return fmt.Errorf("unexpected argument %q", pos[0])
+	}
+	presets, err := parsePresets(*presetFlag)
 	if err != nil {
 		return err
 	}
-	for _, p := range addable {
-		fmt.Printf("  %-30s untracked (git add it to share)\n", p)
-	}
-	for _, p := range ignored {
-		fmt.Printf("  %-30s ignored by .gitignore (won't be shared)\n", p)
-	}
-	return nil
-}
-
-func cmdSync([]string) error {
 	r, err := openInitialized()
 	if err != nil {
+		return err
+	}
+	if err := applyPresets(r, presets); err != nil {
 		return err
 	}
 	changed, err := r.SyncAttributes()
@@ -780,6 +1021,9 @@ func cmdSync([]string) error {
 		step("updated .gitattributes from .gitencrypt")
 	} else {
 		step(".gitattributes already up to date")
+	}
+	if err := writeAgentNotes(r, true); err != nil {
+		return err
 	}
 	if err := stageUntrackedSecrets(r); err != nil {
 		return err

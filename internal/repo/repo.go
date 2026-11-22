@@ -13,6 +13,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/BurntSushi/toml"
+	"github.com/juanfraherrero/keep-in-secret/internal/agents"
 	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
 	"github.com/juanfraherrero/keep-in-secret/internal/gitencrypt"
 	"github.com/juanfraherrero/keep-in-secret/internal/gitx"
@@ -230,6 +231,17 @@ func (r *Repo) WriteDefaultGitencrypt() (bool, error) {
 	return true, r.writeFile(gitencrypt.FileName, []byte(gitencrypt.DefaultContent), 0o644)
 }
 
+// AddPresets appends the presets' missing patterns to .gitencrypt. It
+// returns true if the file changed.
+func (r *Repo) AddPresets(presets []gitencrypt.Preset) (bool, error) {
+	ge, _ := r.ReadGitencrypt()
+	merged := gitencrypt.WithPresets(ge, presets)
+	if merged == ge {
+		return false, nil
+	}
+	return true, r.writeFile(gitencrypt.FileName, []byte(merged), 0o644)
+}
+
 func (r *Repo) readAttributes() string {
 	data, _ := os.ReadFile(r.path(".gitattributes"))
 	return string(data)
@@ -399,4 +411,29 @@ func (r *Repo) Refresh(paths []string, wantEncrypted bool) (int, error) {
 	}
 	_, err := r.Git(append([]string{"checkout", "--"}, stale...)...)
 	return len(stale), err
+}
+
+// WriteAgentNotes adds or refreshes the kis section of AGENTS.md and of the
+// optional agent files that exist. With onlyExisting, files without a kis
+// section are left alone (how `kis sync` respects a removed section). It
+// returns the files it changed.
+func (r *Repo) WriteAgentNotes(onlyExisting bool) ([]string, error) {
+	var changed []string
+	for i, name := range append([]string{agents.FileName}, agents.Optional...) {
+		data, err := os.ReadFile(r.path(name))
+		if err != nil && (i > 0 || onlyExisting) {
+			continue
+		}
+		old := string(data)
+		if onlyExisting && !agents.Has(old) {
+			continue
+		}
+		if merged := agents.Merge(old); merged != old {
+			if err := r.writeFile(name, []byte(merged), 0o644); err != nil {
+				return changed, err
+			}
+			changed = append(changed, name)
+		}
+	}
+	return changed, nil
 }

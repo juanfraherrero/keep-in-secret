@@ -287,11 +287,13 @@ cmd/kis/
   script_test.go    end-to-end harness (testscript) and its custom commands
   testdata/script/  one .txtar scenario per user journey
 internal/
+  agents/           the kis section of AGENTS.md / CLAUDE.md
   crypt/            deterministic AES-256-GCM (SIV-style), file format, v1 fixture
   filter/           clean/smudge rules and the pkt-line filter protocol
-  gitencrypt/       .gitencrypt → .gitattributes managed block
+  gitencrypt/       .gitencrypt → .gitattributes managed block, stack presets
   keys/             age/SSH identities, recipients, github:USER, wrap/unwrap
-  repo/             .kis/ state, key cache, file discovery, git wiring and hook
+  repo/             .kis/ state, key cache, file discovery, git wiring and hook,
+                    the "safe to push" audit behind `kis status`
   gitx/             git exec helpers and the git version check
 test/docker/        test image + runner for the git version / distro matrix
 ```

@@ -1,0 +1,66 @@
+# kis init writes a section to AGENTS.md (and CLAUDE.md if present) telling
+# coding agents that the committed .env is encrypted and how to check it.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+stdout '✓ updated AGENTS.md, CLAUDE.md, \.github/copilot-instructions\.md so coding agents know'
+grep 'kis status --check' .github/copilot-instructions.md
+! exists GEMINI.md
+grep '^# Our project$' AGENTS.md
+grep '^Use tabs\.$' AGENTS.md
+grep '^## Secrets are committed encrypted \(kis\)$' AGENTS.md
+grep 'run `kis status --check`' AGENTS.md
+grep '^<!-- <<< kis -->$' CLAUDE.md
+grep '^See AGENTS\.md$' CLAUDE.md
+stored : .env
+exec git status --porcelain AGENTS.md CLAUDE.md
+stdout '^A  AGENTS\.md$'
+stdout '^A  CLAUDE\.md$'
+exec git commit -qm init
+
+# sync rewrites an outdated section in place and keeps the rest.
+cp $WORK/old-agents AGENTS.md
+exec kis sync
+stdout '✓ updated AGENTS.md'
+! grep 'old kis text' AGENTS.md
+grep 'run `kis status --check`' AGENTS.md
+grep '^Team notes after\.$' AGENTS.md
+exec git commit -qm 'refresh agents'
+
+# A section the team deleted stays deleted.
+cp $WORK/no-section CLAUDE.md
+exec git commit -qam 'drop kis from CLAUDE.md'
+exec kis sync
+! stdout 'updated .*CLAUDE'
+! grep 'kis' CLAUDE.md
+
+# --no-agents leaves agent files alone.
+cd $WORK/other
+exec git init -q
+exec kis init -y --name owner --no-agents
+! stdout 'AGENTS'
+! exists AGENTS.md
+
+-- app/.env --
+A=1
+-- app/AGENTS.md --
+# Our project
+
+Use tabs.
+-- app/CLAUDE.md --
+See AGENTS.md
+-- app/.github/copilot-instructions.md --
+Use TypeScript.
+-- old-agents --
+# Our project
+
+<!-- >>> kis: managed by `kis init` / `kis sync`, edits inside are overwritten -->
+old kis text
+<!-- <<< kis -->
+
+Team notes after.
+-- no-section --
+See AGENTS.md
+-- other/.env --
+B=2
