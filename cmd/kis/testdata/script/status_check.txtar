@@ -1,0 +1,103 @@
+# kis status says whether it is safe to push; --check turns that into an exit
+# code for CI and agents, --json into data, --since covers a whole PR.
+
+# Not set up yet: JSON still answers, and --check fails.
+cd app
+exec git init -q
+! exec kis status --json --check
+stdout '"initialized": false'
+stdout '"safe_to_push": false'
+
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git branch base
+
+# Clean state: safe, and --check exits 0.
+exec kis status --check
+stdout 'safe to push +yes: \.env is encrypted in git'
+stdout 'only files matched by \.gitencrypt are checked'
+! stdout 'fix:'
+exec kis status --json
+stdout '"initialized": true'
+stdout '"safe_to_push": true'
+stdout '"encrypted_files": \[\s+".env"\s+\]'
+stdout '"scope": "files matched by .gitencrypt'
+stdout '"unlocked": true'
+stdout '"path": ".env",\s+"state": "encrypted"'
+stdout '"problems": \[\]'
+
+# Plaintext staged (filter missing): unsafe, with the fix spelled out.
+exec git config --remove-section filter.kis
+cp $WORK/local .env.local
+exec git add .env.local
+! exec kis status --check
+stdout '\.env\.local +PLAINTEXT in index'
+stdout 'safe to push +NO: fix the problems below'
+stdout '✗ \.env\.local: staged in plaintext'
+stdout 'fix: kis sync'
+stdout '! git filters are not configured in this clone'
+exec kis status --json
+stdout '"safe_to_push": false'
+stdout '"severity": "error",\s+"path": ".env.local"'
+stdout '"severity": "warning"'
+
+# Committed anyway, skipping the hook. The next commit encrypts it, so HEAD
+# is fine again...
+exec git commit -qm leak --no-verify
+exec kis unlock
+exec kis sync
+exec git commit -qm 'encrypt local env'
+stored HEAD .env.local
+exec kis status --check
+stdout 'safe to push +yes: \.env, \.env\.local are encrypted in git'
+
+# ...but the pull request still contains the leaking commit.
+! exec kis status --check --since base
+stdout '✗ \.env\.local @ [0-9a-f]{12}: a commit to be pushed stores it in plaintext'
+stdout 'fix: rewrite that commit'
+! exec kis status --since nope
+stderr 'unknown revision nope.*fetch-depth: 0'
+
+# .gitencrypt edited without syncing is unsafe too.
+cp $WORK/gitencrypt-extra .gitencrypt
+! exec kis status --check
+stdout '✗ \.gitattributes: \.gitencrypt changed but \.gitattributes was not updated'
+exec kis sync
+exec git commit -qm 'more secrets'
+
+# A CI checkout: no kis unlock, no filters. Still safe, no warnings.
+exec git push -q $REMOTE HEAD:main
+cd $WORK
+exec git clone -q $REMOTE ci
+cd ci
+encrypted .env
+exec kis status --check
+stdout 'state +LOCKED'
+stdout 'safe to push +yes'
+! stdout '!'
+
+# Plaintext committed before kis was set up: the index is encrypted now, but
+# HEAD is not until the next commit.
+cd $WORK/legacy
+exec git init -q
+exec git add .
+exec git commit -qm 'env in plaintext'
+exec kis init -y --name owner
+! exec kis status --check
+stdout '\.env +PLAINTEXT in last commit'
+stdout '✗ \.env: the last commit stores it in plaintext'
+stdout 'fix: commit the encrypted version'
+exec git commit -qm 'encrypt env'
+exec kis status --check
+
+-- legacy/.env --
+OLD=1
+-- app/.env --
+A=1
+-- local --
+LOCAL=1
+-- gitencrypt-extra --
+.env
+.env.*
+config/secrets.json

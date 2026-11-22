@@ -37,6 +37,7 @@ Lines are commands; `!` in front expects failure (or negates an assertion);
 | `changed NAME +a ~m -d` | **Exactly** these files were added / modified / deleted since `snapshot NAME` (globs allowed) |
 | `github USER FILE` | Serve FILE as `https://github.com/USER.keys` (for `kis add NAME github:USER`) |
 | `sshkey [-rsa] [-passphrase P] COMMENT PATH` | Write an OpenSSH key pair (no ssh-keygen needed) |
+| `binfile PATH` | Write a binary file with every byte value (NUL, CR, LF…), like a keystore |
 | `pubkey VAR` | Run `kis pubkey` and store the current person's first public key in `$VAR` |
 
 Conditions: testscript's built-ins

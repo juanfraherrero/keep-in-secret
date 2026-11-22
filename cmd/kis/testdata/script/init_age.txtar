@@ -17,7 +17,7 @@ stdout 'They run `kis keygen`'
 ! stderr .
 
 # Exactly these files appear or change in the repo.
-changed before +.gitencrypt +.gitattributes ~.gitignore +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/hooks/pre-commit +.git/kis/key
+changed before +.gitencrypt +.gitattributes ~.gitignore +AGENTS.md +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/hooks/pre-commit +.git/kis/key
 
 # The personal key lives outside the repo, private.
 exists $KIS_KEY
@@ -92,6 +92,7 @@ A  .gitignore
 A  .kis/config.toml
 A  .kis/keys/owner.age
 A  .kis/recipients.toml
+A  AGENTS.md
 ?? .env.example
 ?? README.md
 -- want/gitencrypt --

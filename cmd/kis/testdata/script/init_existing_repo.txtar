@@ -14,7 +14,7 @@ stdout '! .*pre-commit already exists; add this line to it'
 stdout 'kis precommit \|\| exit 1'
 stdout '! these were already committed in PLAINTEXT before: \.env'
 stdout 'old commits still contain them: rotate those secrets'
-changed before +.gitencrypt +.gitattributes +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/kis/key
+changed before +.gitencrypt +.gitattributes +AGENTS.md +.kis/config.toml +.kis/recipients.toml +.kis/keys/owner.age ~.git/config +.git/kis/key
 
 # The user's hook is untouched.
 cmp .git/hooks/pre-commit $WORK/hook

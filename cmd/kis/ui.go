@@ -95,3 +95,4 @@ func passphrasePrompt(path string) func() ([]byte, error) {
 
 func step(format string, a ...any) { fmt.Printf("  ✓ "+format+"\n", a...) }
 func warn(format string, a ...any) { fmt.Printf("  ! "+format+"\n", a...) }
+func note(format string, a ...any) { fmt.Printf("  → "+format+"\n", a...) }

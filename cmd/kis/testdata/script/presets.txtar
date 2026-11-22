@@ -1,0 +1,77 @@
+# Presets cover secret files of stacks that don't use .env. kis init detects
+# the stack but, without a terminal, only says how to opt in.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+stdout '→ android project detected; to also encrypt its signing keystores .*: kis sync --preset android'
+stdout '→ terraform project detected; .*kis sync --preset terraform'
+attr release.jks filter unspecified
+exec git add .
+exec git commit -qm init
+
+# Opting in later, the way an agent would.
+exec kis sync --preset android,terraform
+stdout '✓ added android, terraform patterns to \.gitencrypt'
+grep '^# android: signing keystores and their passwords$' .gitencrypt
+grep '^\*\.tfvars$' .gitencrypt
+attr release.jks filter kis
+attr app/keystore.properties filter kis
+attr infra/prod.tfvars filter kis
+attr infra/prod.tfvars.example filter unspecified
+stored : release.jks infra/prod.tfvars
+exec git commit -qm 'encrypt stack secrets'
+exec kis status --check
+
+# Applying a preset twice changes nothing.
+exec kis sync --preset android
+! stdout 'added'
+! exec kis sync --preset cobol
+stderr 'unknown preset "cobol" \(available: android, rails, spring, terraform\)'
+
+# Binary secrets survive the round trip to a partner byte for byte.
+exec kis keygen
+exec git push -q $REMOTE HEAD:main
+as ana
+exec kis keygen
+pubkey ANA
+as owner
+exec kis add ana $ANA
+exec git commit -qm 'add ana'
+exec git push -q $REMOTE HEAD:main
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+encrypted release.jks
+exec kis unlock
+cmp release.jks $WORK/app/release.jks
+exec git status --porcelain
+! stdout .
+
+# --preset at init applies directly, no detection needed.
+cd $WORK/rails
+exec git init -q
+exec kis init -y --name owner --preset rails
+stdout '✓ added rails patterns to \.gitencrypt'
+attr config/master.key filter kis
+stored : config/master.key
+
+-- app/.env --
+A=1
+-- app/app/src/main/AndroidManifest.xml --
+<manifest/>
+-- app/app/keystore.properties --
+storePassword=hunter2
+-- app/infra/main.tf --
+terraform {}
+-- app/infra/prod.tfvars --
+db_password = "hunter2"
+-- app/infra/prod.tfvars.example --
+db_password = ""
+-- app/release.jks --
+placeholder
+-- rails/config/application.rb --
+module App; end
+-- rails/config/master.key --
+0123456789abcdef
