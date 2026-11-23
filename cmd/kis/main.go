@@ -8,9 +8,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 )
 
+// version is set by the release build (-X main.version); `go install …@v0.1.0`
+// builds get it from the module version instead.
 var version = "dev"
+
+func init() {
+	if bi, ok := debug.ReadBuildInfo(); ok && version == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		version = bi.Main.Version
+	}
+}
 
 type command struct {
 	name, usage, summary string

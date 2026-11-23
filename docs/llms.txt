@@ -5,7 +5,7 @@
 > encrypts, checkout decrypts, so the working copy is plaintext while the index,
 > history and remote only hold ciphertext. Works with any language or stack.
 
-Install (needs git 2.28+): `go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest`
+Install (needs git 2.28+): `curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh` (macOS/Linux), or `go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest`
 
 ## Rules for coding agents in a kis repository
 

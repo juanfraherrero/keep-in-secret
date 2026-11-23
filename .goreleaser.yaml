@@ -1,0 +1,30 @@
+# Builds the release binaries. Runs from .github/workflows/release.yml when a
+# v* tag is pushed; try locally with `goreleaser release --snapshot --clean`.
+version: 2
+
+builds:
+  - main: ./cmd/kis
+    binary: kis
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - "-s -w -X main.version={{ .Version }}"
+
+archives:
+  # No version in the name, so releases/latest/download/... always works (install.sh).
+  - name_template: "kis_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^Merge "]

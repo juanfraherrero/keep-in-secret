@@ -44,3 +44,22 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make fuzz FUZZTIME=30s
+
+  # Builds every release binary without publishing, so a broken
+  # .goreleaser.yaml is caught here instead of on the next tag.
+  release-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: archive install.sh downloads works
+        run: tar -xzf dist/kis_linux_amd64.tar.gz -C "$RUNNER_TEMP" kis && "$RUNNER_TEMP/kis" version
+      - run: sh -n install.sh
