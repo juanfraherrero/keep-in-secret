@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"filippo.io/age"
@@ -90,10 +92,10 @@ func cmdInit(args []string) error {
 	}
 
 	master := crypt.NewKey()
-	if err := r.SaveMasterKey(master); err != nil {
+	if err := r.SaveGroupKey(crypt.DefaultGroup, master); err != nil {
 		return err
 	}
-	if err := r.WrapFor(me, master, []string{pub}); err != nil {
+	if err := r.WrapFor(crypt.DefaultGroup, me, master, []string{pub}); err != nil {
 		return err
 	}
 	if err := r.SaveRecipients(repo.Recipients{me: {pub}}); err != nil {
@@ -105,6 +107,9 @@ func cmdInit(args []string) error {
 	step("created repository key, encrypted for %s (%s key %s)", me, keyType, keyPath)
 
 	if err := wireGit(r); err != nil {
+		return err
+	}
+	if err := ensureGroups(r); err != nil {
 		return err
 	}
 	if _, err := r.SyncAttributes(); err != nil {
@@ -137,7 +142,7 @@ func cmdInit(args []string) error {
 				break
 			}
 			karg := ask("Their public key, github:USER, or path to a .pub file", "")
-			if err := addRecipient(r, pname, []string{karg}, false); err != nil {
+			if err := addRecipient(r, pname, []string{karg}, []string{crypt.DefaultGroup}, false); err != nil {
 				warn("%v", err)
 			}
 		}
@@ -235,6 +240,30 @@ func writeAgentNotes(r *repo.Repo, onlyExisting bool) error {
 		return err
 	}
 	step("updated %s so coding agents know these secrets are safe to commit", strings.Join(changed, ", "))
+	return nil
+}
+
+// ensureGroups validates .gitencrypt and creates, with you as the first
+// member, every group it names that has no key yet.
+func ensureGroups(r *repo.Repo) error {
+	ge, _ := r.ReadGitencrypt()
+	if _, errs := gitencrypt.Parse(ge); len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	rs, err := r.LoadRecipients()
+	if err != nil {
+		return err
+	}
+	for _, g := range gitencrypt.Groups(ge) {
+		if r.HasGroup(g) {
+			continue
+		}
+		_, me, err := groupKey(r, rs, g)
+		if err != nil {
+			return err
+		}
+		step("created group %s with you (%s) as its member; add others: kis add NAME --group %s", g, me, g)
+	}
 	return nil
 }
 
@@ -356,26 +385,25 @@ func syncAndStage(r *repo.Repo) error {
 		return err
 	}
 	leaving := subtract(previous, secrets)
-	if len(leaving) > 0 {
-		c, err := r.Cipher()
-		if err != nil {
-			return fmt.Errorf("%s would stop being encrypted, which needs the plaintext: %w", strings.Join(leaving, ", "), err)
+	// The filter no longer applies to these, so decrypt any working copy
+	// still holding ciphertext before it is re-added as plaintext.
+	for _, p := range leaving {
+		path := filepath.Join(r.Root, filepath.FromSlash(p))
+		data, err := os.ReadFile(path)
+		group, encrypted := crypt.GroupOf(data)
+		if err != nil || !encrypted {
+			continue
 		}
-		// The filter no longer applies to these, so decrypt any working copy
-		// still holding ciphertext before it is re-added as plaintext.
-		for _, p := range leaving {
-			path := filepath.Join(r.Root, filepath.FromSlash(p))
-			data, err := os.ReadFile(path)
-			if err != nil || !crypt.IsEncrypted(data) {
-				continue
-			}
-			plain, err := c.Decrypt(data)
-			if err != nil {
-				return fmt.Errorf("%s: %w", p, err)
-			}
-			if err := os.WriteFile(path, plain, 0o644); err != nil {
-				return err
-			}
+		c, err := r.Cipher(group)
+		if err != nil {
+			return fmt.Errorf("%s would stop being encrypted, which needs the plaintext: %w", p, err)
+		}
+		plain, err := c.Decrypt(data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+		if err := os.WriteFile(path, plain, 0o644); err != nil {
+			return err
 		}
 	}
 	return r.Renormalize(append(secrets, leaving...))
@@ -526,31 +554,64 @@ func cmdPubkey([]string) error {
 func cmdAdd(args []string) error {
 	fs := newFlags("add")
 	force := fs.Bool("force", false, "replace the keys of an existing partner")
+	groupFlag := fs.String("group", "", "groups to add them to, comma-separated (default: the default group)")
 	pos := parseFlags(fs, args)
-	if len(pos) < 2 {
+	if len(pos) < 1 {
 		fs.Usage()
 		return exitError{}
+	}
+	groups, err := parseGroups(*groupFlag)
+	if err != nil {
+		return err
 	}
 	r, err := openInitialized()
 	if err != nil {
 		return err
 	}
-	if err := addRecipient(r, pos[0], pos[1:], *force); err != nil {
+	if err := addRecipient(r, pos[0], pos[1:], groups, *force); err != nil {
 		return err
 	}
 	fmt.Printf("\nNow commit and push, then ask %s to run:  kis unlock\n", pos[0])
 	return nil
 }
 
-func addRecipient(r *repo.Repo, name string, keyArgs []string, force bool) error {
+// parseGroups reads a --group flag; empty means the default group.
+func parseGroups(flag string) ([]string, error) {
+	if flag == "" {
+		return []string{crypt.DefaultGroup}, nil
+	}
+	var out []string
+	for _, g := range strings.Split(flag, ",") {
+		g = strings.TrimSpace(g)
+		if !validName.MatchString(g) {
+			return nil, fmt.Errorf("invalid group %q: use letters, digits, '.', '_' or '-'", g)
+		}
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+// addRecipient gives name access to groups. Without keyArgs, name must be
+// an existing partner, whose keys are reused. A group that doesn't exist yet
+// is created, with you as a member too.
+func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, force bool) error {
 	if !validName.MatchString(name) {
 		return fmt.Errorf("invalid name %q: use letters, digits, '.', '_' or '-'", name)
 	}
-	master, err := r.MasterKey()
+	rs, err := r.LoadRecipients()
 	if err != nil {
 		return err
 	}
+	_, exists := rs[name]
 	var pubs []string
+	switch {
+	case len(keyArgs) == 0 && !exists:
+		return fmt.Errorf("%s is not a partner yet: kis add %s KEY|github:USER|FILE.pub", name, name)
+	case len(keyArgs) == 0:
+		pubs = rs[name]
+	case exists && !force:
+		return fmt.Errorf("%s already has access; use --force to replace their keys, or omit the key to add them to a group: kis add %s --group GROUP", name, name)
+	}
 	for _, a := range keyArgs {
 		p, err := keys.ResolveRecipients(a)
 		if err != nil {
@@ -558,15 +619,35 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, force bool) error
 		}
 		pubs = append(pubs, p...)
 	}
-	rs, err := r.LoadRecipients()
-	if err != nil {
-		return err
+	for _, g := range groups {
+		master, created, err := groupKey(r, rs, g)
+		if err != nil {
+			return err
+		}
+		if !force && len(keyArgs) == 0 && slices.Contains(r.Members(g), name) {
+			return fmt.Errorf("%s is already in group %s", name, g)
+		}
+		if err := r.WrapFor(g, name, master, pubs); err != nil {
+			return err
+		}
+		if created != "" {
+			step("created group %s (you are a member as %s)", g, created)
+		}
 	}
-	if _, exists := rs[name]; exists && !force {
-		return fmt.Errorf("%s already has access; use --force to replace their keys", name)
-	}
-	if err := r.WrapFor(name, master, pubs); err != nil {
-		return err
+	// Replaced keys must also open the groups they were already in.
+	if force && len(keyArgs) > 0 {
+		for _, g := range r.GroupsOf(name) {
+			if slices.Contains(groups, g) {
+				continue
+			}
+			master, err := r.GroupKey(g)
+			if err != nil {
+				return fmt.Errorf("%s is in group %s, which you can't open to re-wrap for the new keys: %w", name, g, err)
+			}
+			if err := r.WrapFor(g, name, master, pubs); err != nil {
+				return err
+			}
+		}
 	}
 	rs[name] = pubs
 	if err := r.SaveRecipients(rs); err != nil {
@@ -575,14 +656,65 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, force bool) error
 	if _, err := r.Git("add", "--", repo.Dir); err != nil {
 		return err
 	}
-	step("added %s (%d key(s), %s)", name, len(pubs), keys.RecipientType(pubs[0]))
+	// Repositories without groups never hear about them.
+	in := ""
+	if len(r.Groups()) > 1 {
+		in = " to " + strings.Join(groups, ", ")
+	}
+	step("added %s%s (%d key(s), %s)", name, in, len(pubs), keys.RecipientType(pubs[0]))
 	return nil
+}
+
+// groupKey returns a group's master key. A group nobody holds yet is
+// created here, wrapped for you; created is then your partner name.
+func groupKey(r *repo.Repo, rs repo.Recipients, group string) (master []byte, created string, err error) {
+	if r.HasGroup(group) {
+		master, err = r.GroupKey(group)
+		return master, "", err
+	}
+	me, err := whoAmI(rs)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating group %s: %w", group, err)
+	}
+	master = crypt.NewKey()
+	if err := r.WrapFor(group, me, master, rs[me]); err != nil {
+		return nil, "", err
+	}
+	return master, me, r.SaveGroupKey(group, master)
+}
+
+// whoAmI finds the partner whose public key is one of this machine's keys.
+func whoAmI(rs repo.Recipients) (string, error) {
+	mine := map[string]bool{}
+	for _, c := range keys.Candidates() {
+		if pub, err := keys.PublicKey(c.Path); err == nil {
+			mine[normalizeKey(pub)] = true
+		}
+	}
+	for _, n := range rs.Names() {
+		for _, pub := range rs[n] {
+			if mine[normalizeKey(pub)] {
+				return n, nil
+			}
+		}
+	}
+	return "", errors.New("none of this machine's keys belongs to a partner (see `kis pubkey` and `kis status`)")
+}
+
+// normalizeKey drops an SSH key's comment so the same key always compares equal.
+func normalizeKey(pub string) string {
+	f := strings.Fields(pub)
+	if len(f) >= 2 {
+		return f[0] + " " + f[1]
+	}
+	return pub
 }
 
 func cmdRemove(args []string) error {
 	fs := newFlags("remove")
-	noRotate := fs.Bool("no-rotate", false, "skip rotating the repository key (they could still decrypt future changes)")
+	noRotate := fs.Bool("no-rotate", false, "skip rotating the group keys (they could still decrypt future changes)")
 	force := fs.Bool("force", false, "rotate even with uncommitted changes to encrypted files")
+	groupFlag := fs.String("group", "", "only remove them from these groups, comma-separated (default: every group, and the partner list)")
 	pos := parseFlags(fs, args)
 	if len(pos) != 1 {
 		fs.Usage()
@@ -590,9 +722,6 @@ func cmdRemove(args []string) error {
 	}
 	r, err := openInitialized()
 	if err != nil {
-		return err
-	}
-	if _, err := r.MasterKey(); err != nil {
 		return err
 	}
 	rs, err := r.LoadRecipients()
@@ -603,26 +732,56 @@ func cmdRemove(args []string) error {
 	if _, ok := rs[name]; !ok {
 		return fmt.Errorf("%s is not a partner (see `kis status`)", name)
 	}
-	if len(rs) == 1 {
-		return errors.New("cannot remove the last partner: nobody could unlock the repository")
+	in := r.GroupsOf(name)
+	groups := in
+	if *groupFlag != "" {
+		if groups, err = parseGroups(*groupFlag); err != nil {
+			return err
+		}
+		for _, g := range groups {
+			if !slices.Contains(in, g) {
+				return fmt.Errorf("%s is not in group %s", name, g)
+			}
+		}
 	}
-	delete(rs, name)
-	if !*noRotate {
-		if err := rotate(r, rs, *force); err != nil {
+	for _, g := range groups {
+		if len(r.Members(g)) == 1 {
+			if g == crypt.DefaultGroup {
+				return errors.New("cannot remove the last partner: nobody could unlock the repository")
+			}
+			return fmt.Errorf("cannot remove the last member of group %s: nobody could decrypt its files", g)
+		}
+		if _, err := r.GroupKey(g); err != nil && !*noRotate {
+			return fmt.Errorf("you are not in group %s, so you can't rotate its key; ask one of %s, or use --no-rotate", g, strings.Join(r.Members(g), ", "))
+		}
+	}
+	for _, g := range groups {
+		if err := r.RemoveKeyFile(g, name); err != nil {
+			return err
+		}
+		if !*noRotate {
+			if err := rotateGroup(r, rs, g, *force); err != nil {
+				return err
+			}
+		}
+	}
+	dropped := len(r.GroupsOf(name)) == 0
+	if dropped {
+		delete(rs, name)
+		if err := r.SaveRecipients(rs); err != nil {
 			return err
 		}
 	}
-	if err := r.RemoveKeyFile(name); err != nil {
+	if _, err := r.Git("add", "-A", "--", repo.Dir); err != nil {
 		return err
 	}
-	if err := r.SaveRecipients(rs); err != nil {
-		return err
+	if dropped {
+		step("removed %s", name)
+		warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
+	} else {
+		step("removed %s from %s", name, strings.Join(groups, ", "))
+		warn("%s can still read %s secrets in past commits: change the real credentials (DB passwords, API keys)", name, strings.Join(groups, ", "))
 	}
-	if _, err := r.Git("add", "--", repo.Dir); err != nil {
-		return err
-	}
-	step("removed %s", name)
-	warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
 	fmt.Println("\nCommit and push. Partners who pull will get the new key automatically.")
 	return nil
 }
@@ -630,6 +789,7 @@ func cmdRemove(args []string) error {
 func cmdRotate(args []string) error {
 	fs := newFlags("rotate")
 	force := fs.Bool("force", false, "rotate even with uncommitted changes to encrypted files")
+	groupFlag := fs.String("group", "", "groups to rotate, comma-separated (default: every group you are in)")
 	parseFlags(fs, args)
 	r, err := openInitialized()
 	if err != nil {
@@ -639,47 +799,106 @@ func cmdRotate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := rotate(r, rs, *force); err != nil {
+	groups := r.HeldGroups()
+	if *groupFlag != "" {
+		if groups, err = parseGroups(*groupFlag); err != nil {
+			return err
+		}
+	}
+	if len(groups) == 0 {
+		return repo.ErrLocked
+	}
+	for _, g := range groups {
+		if err := rotateGroup(r, rs, g, *force); err != nil {
+			return err
+		}
+	}
+	if _, err := r.Git("add", "--", repo.Dir); err != nil {
 		return err
 	}
 	fmt.Println("\nCommit and push. Partners who pull will get the new key automatically.")
 	return nil
 }
 
-// rotate replaces the master key, wraps it for rs and re-encrypts tracked secrets.
-func rotate(r *repo.Repo, rs repo.Recipients, force bool) error {
-	if _, err := r.MasterKey(); err != nil {
+// rotateGroup replaces a group's master key, wraps it for the group's
+// current members and re-encrypts the group's tracked files.
+func rotateGroup(r *repo.Repo, rs repo.Recipients, group string, force bool) error {
+	if _, err := r.GroupKey(group); err != nil {
 		return err
 	}
-	secrets, err := r.TrackedSecrets()
+	files, err := groupFiles(r, group)
 	if err != nil {
 		return err
 	}
-	if dirty, err := r.Dirty(secrets); err != nil {
+	if dirty, err := r.Dirty(files); err != nil {
 		return err
 	} else if len(dirty) > 0 && !force {
 		return fmt.Errorf("uncommitted changes in %s: commit them first or use --force", strings.Join(dirty, ", "))
 	}
-	if _, err := r.Refresh(secrets, false); err != nil { // working copies must be plaintext
+	if _, err := r.Refresh(files, false); err != nil { // working copies must be plaintext
 		return err
 	}
 	master := crypt.NewKey()
-	for _, n := range rs.Names() {
-		if err := r.WrapFor(n, master, rs[n]); err != nil {
+	members := r.Members(group)
+	for _, n := range members {
+		if err := r.WrapFor(group, n, master, rs[n]); err != nil {
 			return err
 		}
 	}
-	if err := r.SaveMasterKey(master); err != nil {
+	if err := r.SaveGroupKey(group, master); err != nil {
 		return err
 	}
-	if err := r.Renormalize(secrets); err != nil {
+	if err := r.Renormalize(files); err != nil {
 		return err
 	}
-	if _, err := r.Git("add", "--", repo.Dir); err != nil {
-		return err
+	what := "repository"
+	if group != crypt.DefaultGroup {
+		what = group
 	}
-	step("new repository key for %s; re-encrypted %d file(s)", strings.Join(rs.Names(), ", "), len(secrets))
+	step("new %s key for %s; re-encrypted %d file(s)", what, strings.Join(members, ", "), len(files))
 	return nil
+}
+
+// groupFiles lists the tracked secrets .gitencrypt puts in group.
+func groupFiles(r *repo.Repo, group string) ([]string, error) {
+	secrets, err := r.TrackedSecrets()
+	if err != nil {
+		return nil, err
+	}
+	groups, err := r.SecretGroups(secrets)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, p := range secrets {
+		if groups[p] == group {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// readable splits tracked secrets into those this clone holds the key for
+// and, by group, those it doesn't.
+func readable(r *repo.Repo) (ok []string, locked map[string][]string, err error) {
+	secrets, err := r.TrackedSecrets()
+	if err != nil {
+		return nil, nil, err
+	}
+	groups, err := r.SecretGroups(secrets)
+	if err != nil {
+		return nil, nil, err
+	}
+	held := r.HeldGroups()
+	locked = map[string][]string{}
+	for _, p := range secrets {
+		if slices.Contains(held, groups[p]) {
+			ok = append(ok, p)
+		} else {
+			locked[groups[p]] = append(locked[groups[p]], p)
+		}
+	}
+	return ok, locked, nil
 }
 
 // ---- unlock / lock ----
@@ -716,7 +935,7 @@ func cmdUnlock(args []string) error {
 		}
 		ids = append(ids, id)
 	}
-	master, name, err := r.UnwrapMasterKey(ids)
+	masters, name, err := r.UnwrapKeys(ids)
 	if err != nil && !errors.Is(err, repo.ErrNoAccess) {
 		if strings.Contains(err.Error(), "decryption password incorrect") {
 			return errors.New("incorrect passphrase for your SSH key; nothing was unlocked")
@@ -733,17 +952,27 @@ func cmdUnlock(args []string) error {
 		}
 		return exitError{}
 	}
-	if err := r.SaveMasterKey(master); err != nil {
+	// Start clean: keys of groups you were removed from must not linger.
+	if err := r.ForgetKeys(); err != nil {
 		return err
+	}
+	var groups []string
+	for _, g := range r.Groups() {
+		if k, ok := masters[g]; ok {
+			if err := r.SaveGroupKey(g, k); err != nil {
+				return err
+			}
+			groups = append(groups, g)
+		}
 	}
 	if err := wireGit(r); err != nil {
 		return err
 	}
-	secrets, err := r.TrackedSecrets()
+	files, locked, err := readable(r)
 	if err != nil {
 		return err
 	}
-	n, err := r.Refresh(secrets, false)
+	n, err := r.Refresh(files, false)
 	if err != nil {
 		return err
 	}
@@ -756,7 +985,15 @@ func cmdUnlock(args []string) error {
 	if err := r.Renormalize(staged); err != nil {
 		return err
 	}
-	step("unlocked as %s; decrypted %d file(s)", name, n)
+	if len(r.Groups()) == 1 {
+		step("unlocked as %s; decrypted %d file(s)", name, n)
+	} else {
+		step("unlocked as %s (groups: %s); decrypted %d file(s)", name, strings.Join(groups, ", "), n)
+	}
+	for _, g := range slices.Sorted(maps.Keys(locked)) {
+		verb := map[bool]string{true: "stays", false: "stay"}[len(locked[g]) == 1]
+		note("not in group %s: %s %s encrypted (ask a member: kis add %s --group %s)", g, strings.Join(locked[g], ", "), verb, name, g)
+	}
 	if len(staged) > 0 {
 		step("re-encrypted staged %s", strings.Join(staged, ", "))
 	}
@@ -780,7 +1017,7 @@ func cmdLock(args []string) error {
 	} else if len(dirty) > 0 && !*force {
 		return fmt.Errorf("uncommitted changes in %s would be lost: commit them or use --force", strings.Join(dirty, ", "))
 	}
-	if err := r.ForgetMasterKey(); err != nil {
+	if err := r.ForgetKeys(); err != nil {
 		return err
 	}
 	n, err := r.Refresh(secrets, true)
@@ -832,6 +1069,7 @@ type statusJSON struct {
 	InSync      bool              `json:"attributes_in_sync"`
 	DefaultKey  string            `json:"default_key,omitempty"`
 	Partners    []partnerJSON     `json:"partners,omitempty"`
+	Groups      []groupJSON       `json:"groups,omitempty"`
 	Encrypted   []string          `json:"encrypted_files"`
 	Scope       string            `json:"scope"`
 	Files       []repo.FileStatus `json:"files"`
@@ -846,9 +1084,16 @@ type gitJSON struct {
 }
 
 type partnerJSON struct {
-	Name string `json:"name"`
-	Keys int    `json:"keys"`
-	Type string `json:"type"`
+	Name   string   `json:"name"`
+	Keys   int      `json:"keys"`
+	Type   string   `json:"type"`
+	Groups []string `json:"groups"`
+}
+
+type groupJSON struct {
+	Name    string   `json:"name"`
+	Members []string `json:"members"`
+	HaveKey bool     `json:"have_key"`
 }
 
 func collectStatus(since string) (statusJSON, error) {
@@ -868,13 +1113,13 @@ func collectStatus(since string) (statusJSON, error) {
 	if err != nil {
 		return statusJSON{}, err
 	}
-	_, keyErr := r.MasterKey()
+	held := r.HeldGroups()
 	st := statusJSON{
 		Version:     version,
 		Initialized: true,
 		Scope:       statusScope,
 		Repository:  r.Root,
-		Unlocked:    keyErr == nil,
+		Unlocked:    len(held) > 0,
 		GitFilters:  r.GitConfigured(),
 		PreCommit:   r.HookInstalled(),
 		InSync:      r.AttributesInSync(),
@@ -886,7 +1131,10 @@ func collectStatus(since string) (statusJSON, error) {
 		st.Git = &gitJSON{fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]), gitx.Supported(v)}
 	}
 	for _, n := range rs.Names() {
-		st.Partners = append(st.Partners, partnerJSON{n, len(rs[n]), keys.RecipientType(rs[n][0])})
+		st.Partners = append(st.Partners, partnerJSON{n, len(rs[n]), keys.RecipientType(rs[n][0]), r.GroupsOf(n)})
+	}
+	for _, g := range r.Groups() {
+		st.Groups = append(st.Groups, groupJSON{g, r.Members(g), slices.Contains(held, g)})
 	}
 	// A clone that cannot encrypt on `git add` may leak the next commit,
 	// but CI checkouts never commit, so these only warn.
@@ -952,22 +1200,35 @@ func printStatus(st statusJSON) {
 	}
 	fmt.Printf(".gitattributes  %s\n", sync)
 	fmt.Printf("default key     %s\n", st.DefaultKey)
+	grouped := len(st.Groups) > 1
 	fmt.Println("partners")
 	for _, p := range st.Partners {
-		fmt.Printf("  %-14s %d %s key(s)\n", p.Name, p.Keys, p.Type)
+		in := ""
+		if grouped {
+			in = "  in " + strings.Join(p.Groups, ", ")
+		}
+		fmt.Printf("  %-14s %d %s key(s)%s\n", p.Name, p.Keys, p.Type, in)
 	}
 	fmt.Println("encrypted files")
 	if len(st.Files) == 0 {
 		fmt.Println("  (none tracked yet)")
 	}
 	for _, f := range st.Files {
-		fmt.Printf("  %-30s %s\n", f.Path, map[string]string{
+		group := ""
+		if grouped && f.Group != "" {
+			group = " [" + f.Group + "]"
+			if !f.Readable && f.State == repo.FileEncrypted {
+				group = " [" + f.Group + ", no access here]"
+			}
+		}
+		fmt.Printf("  %-30s %s%s\n", f.Path, map[string]string{
 			repo.FileEncrypted:  "encrypted in git",
 			repo.FilePlainIndex: "PLAINTEXT in index (run `kis sync`)",
 			repo.FilePlainHead:  "PLAINTEXT in last commit",
 			repo.FileUntracked:  "untracked (git add it to share)",
 			repo.FileIgnored:    "ignored by .gitignore (won't be shared)",
-		}[f.State])
+			repo.FileWrongGroup: "encrypted for the WRONG group (run `kis sync`)",
+		}[f.State], group)
 	}
 	switch {
 	case !st.SafeToPush:
@@ -1008,6 +1269,9 @@ func cmdSync(args []string) error {
 		return err
 	}
 	if err := applyPresets(r, presets); err != nil {
+		return err
+	}
+	if err := ensureGroups(r); err != nil {
 		return err
 	}
 	changed, err := r.SyncAttributes()

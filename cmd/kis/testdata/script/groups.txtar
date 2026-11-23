@@ -1,0 +1,181 @@
+# Groups: .env.production is only for the prod group, everything else for
+# everyone. Basic usage (no @group anywhere) never mentions groups.
+
+exec kis keygen
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+
+# Ana: a regular partner. ops: a deploy bot that only gets prod.
+as ana
+exec kis keygen
+pubkey ANA
+as ops
+exec kis keygen
+pubkey OPS
+as owner
+exec kis add ana $ANA
+stdout '✓ added ana \(1 key'
+! stdout 'default'
+
+# Putting a file in a group: one line in .gitencrypt, then kis sync.
+cp $WORK/gitencrypt .gitencrypt
+cp $WORK/prod .env.production
+exec kis sync
+stdout '✓ created group prod with you \(owner\) as its member; add others: kis add NAME --group prod'
+attr .env.production kis-group prod
+attr .env kis-group unspecified
+group : .env.production prod
+group : .env default
+exec kis add ops $OPS --group prod
+stdout '✓ added ops to prod'
+exists .kis/keys/prod/ops.age
+! exists .kis/keys/ops.age
+exec git add .
+exec git commit -qm 'prod secrets for prod only'
+exec kis status --check
+stdout 'owner +1 age key\(s\)  in default, prod'
+stdout 'ana +1 age key\(s\)  in default$'
+stdout 'ops +1 age key\(s\)  in prod$'
+stdout '\.env\.production +encrypted in git \[prod\]'
+exec kis status --json
+stdout '"name": "prod",\s+"members": \[\s+"ops",\s+"owner"\s+\],\s+"have_key": true'
+exec git push -q $REMOTE HEAD:main
+
+# Ana reads .env but .env.production stays ciphertext, and she can still
+# work and commit normally.
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+stdout '✓ unlocked as ana \(groups: default\); decrypted 2 file'
+stdout '→ not in group prod: \.env\.production stays encrypted \(ask a member: kis add ana --group prod\)'
+! encrypted .env
+encrypted .env.production
+exec kis status --check
+stdout '\.env\.production +encrypted in git \[prod, no access here\]'
+cp $WORK/ana-env .env
+exec git commit -qam 'ana changes env'
+group HEAD .env.production prod
+exec git status --porcelain
+! stdout .
+exec git push -q $REMOTE HEAD:main
+
+# She can't add people to a group she isn't in.
+! exec kis add ana --group prod
+stderr 'no key for group prod here'
+
+# The deploy bot: prod only.
+as ops
+cd $WORK
+exec git clone -q $REMOTE ops
+cd ops
+exec kis unlock
+stdout '✓ unlocked as ops \(groups: prod\)'
+encrypted .env
+! encrypted .env.production
+cmp .env.production $WORK/prod
+
+# Owner gives Ana prod access later, reusing her key; she unlocks again.
+as owner
+cd $WORK/app
+exec git pull -q $REMOTE main
+exec kis add ana --group prod
+stdout '✓ added ana to prod'
+! exec kis add ana --group prod
+stderr 'ana is already in group prod'
+exec git commit -qm 'ana joins prod'
+exec git push -q $REMOTE HEAD:main
+as ana
+cd $WORK/ana
+exec git pull -q $REMOTE main
+exec kis unlock
+stdout 'groups: default, prod'
+cmp .env.production $WORK/prod
+
+# Removing ops from prod rotates only the prod key.
+as owner
+cd $WORK/app
+exec git pull -q $REMOTE main
+cp .kis/keys/owner.age $WORK/owner-default-before
+exec kis remove ops
+stdout '✓ new prod key for ana, owner; re-encrypted 1 file'
+! stdout 'repository key'
+stdout '✓ removed ops'
+cmp .kis/keys/owner.age $WORK/owner-default-before
+! exists .kis/keys/prod/ops.age
+! grep '^ops' .kis/recipients.toml
+exec git commit -qm 'remove ops'
+exec kis status --check
+
+# Conflicting edits to a prod file merge as plaintext and stay prod-encrypted.
+exec git checkout -q -b hotfix
+cp $WORK/prod-a .env.production
+exec git commit -qam 'hotfix password'
+exec git checkout -q main
+cp $WORK/prod-b .env.production
+exec git commit -qam 'rotate password'
+! exec git merge -q hotfix
+grep '^<<<<<<< ours$' .env.production
+grep '^DB_PASS=hotfix$' .env.production
+cp $WORK/prod-a .env.production
+exec git add .env.production
+exec git commit -qm merged
+group HEAD .env.production prod
+
+# Moving a file to another group re-encrypts it on sync.
+cp $WORK/gitencrypt-move .gitencrypt
+exec kis sync
+group : .env.staging prod
+exec kis status --check
+exec git commit -qm 'staging is prod-only too'
+
+# A prod file staged with the default key (readable by everyone) is caught by
+# status and blocked by the hook.
+exec sh -c 'git update-index --cacheinfo 100644,$(git rev-parse :.env),.env.production'
+! exec kis status --check
+stdout '\.env\.production +encrypted for the WRONG group'
+stdout '✗ \.env\.production: encrypted for group default but \.gitencrypt puts it in prod'
+! exec git commit -qm 'wrong group'
+stderr 'commit blocked, these files are encrypted for the wrong group'
+exec git reset -q -- .env.production
+exec kis status --check
+
+# A misconfigured .gitencrypt is refused, by sync, status and the hook.
+cp $WORK/gitencrypt-bad .gitencrypt
+! exec kis sync
+stderr 'a file belongs to one group'
+! exec kis status --check
+stdout '✗ \.gitencrypt: \.gitencrypt:3: a file belongs to one group'
+exec git add .gitencrypt
+! exec git commit -qm 'bad gitencrypt'
+stderr 'commit blocked, \.gitencrypt has errors'
+
+-- gitencrypt --
+.env
+.env.*
+.env.production @prod
+-- gitencrypt-move --
+.env
+.env.*
+.env.production @prod
+.env.staging @prod
+-- gitencrypt-bad --
+.env
+.env.*
+.env.production @prod @ops
+-- app/.env --
+A=1
+-- app/.env.staging --
+S=1
+-- prod --
+DB_PASS=prod-secret
+-- prod-a --
+DB_PASS=hotfix
+-- prod-b --
+DB_PASS=rotated
+-- ana-env --
+A=2

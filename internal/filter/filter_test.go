@@ -30,12 +30,21 @@ func request(cmd, path string, content []byte) string {
 const handshake = "0016git-filter-client\n" + "000eversion=2\n" + flush +
 	"0015capability=clean\n" + "0016capability=smudge\n" + "0015capability=delay\n" + flush
 
-func key(t *testing.T) (KeySource, *crypt.Cipher) {
+// key serves one default-group cipher; every path is in the default group.
+func key(t *testing.T) (Keys, *crypt.Cipher) {
 	c, err := crypt.New(bytes.Repeat([]byte{1}, crypt.KeySize))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return func() (*crypt.Cipher, error) { return c, nil }, c
+	return Keys{
+		Cipher: func(g string) (*crypt.Cipher, error) {
+			if g != crypt.DefaultGroup {
+				return nil, errors.New("not a member of " + g)
+			}
+			return c, nil
+		},
+		GroupOf: func(string) (string, error) { return crypt.DefaultGroup, nil },
+	}, c
 }
 
 // response parses kis's replies after the handshake into (status, content) pairs.
@@ -103,8 +112,8 @@ func TestProcessProtocol(t *testing.T) {
 }
 
 func TestProcessLockedRefusesClean(t *testing.T) {
-	locked := func() (*crypt.Cipher, error) { return nil, errors.New("locked") }
-	_, c := key(t)
+	ks, c := key(t)
+	locked := Keys{Cipher: func(string) (*crypt.Cipher, error) { return nil, errors.New("locked") }, GroupOf: ks.GroupOf}
 	ct := c.Encrypt([]byte("S=1"))
 	in := handshake + request("clean", ".env", []byte("S=1")) + request("smudge", ".env", ct) + request("clean", ".env", ct)
 	var out bytes.Buffer
@@ -136,4 +145,58 @@ func FuzzProcess(f *testing.F) {
 		ks, _ := key(t)
 		_ = Process(bytes.NewReader(in), &bytes.Buffer{}, ks)
 	})
+}
+
+// Each path is encrypted with its own group's key; a group you are not in
+// can't take new plaintext, but its ciphertext passes through both ways.
+func TestProcessGroups(t *testing.T) {
+	master := bytes.Repeat([]byte{2}, crypt.KeySize)
+	prod, _ := crypt.NewGroup(master, "prod")
+	def, _ := crypt.New(master)
+	ops, _ := crypt.NewGroup(master, "ops")
+	ks := Keys{
+		Cipher: func(g string) (*crypt.Cipher, error) {
+			switch g {
+			case "prod":
+				return prod, nil
+			case crypt.DefaultGroup:
+				return def, nil
+			}
+			return nil, errors.New("not a member of " + g)
+		},
+		GroupOf: func(p string) (string, error) {
+			if g, ok := map[string]string{".env.prod": "prod", ".env.ops": "ops"}[p]; ok {
+				return g, nil
+			}
+			return crypt.DefaultGroup, nil
+		},
+	}
+	opsCT := ops.Encrypt([]byte("O=1"))
+	in := handshake +
+		request("clean", ".env.prod", []byte("P=1")) +
+		request("clean", ".env", []byte("D=1")) +
+		request("clean", ".env.ops", []byte("O=1")) +
+		request("clean", ".env.ops", opsCT) +
+		request("smudge", ".env.ops", opsCT) +
+		request("smudge", ".env.prod", prod.Encrypt([]byte("P=1")))
+	var out bytes.Buffer
+	if err := Process(strings.NewReader(in), &out, Cached(ks)); err != nil {
+		t.Fatal(err)
+	}
+	res := responses(t, out.Bytes())
+	if g, _ := crypt.GroupOf([]byte(res[0])); g != "prod" {
+		t.Errorf(".env.prod encrypted for %q", g)
+	}
+	if g, _ := crypt.GroupOf([]byte(res[1])); g != crypt.DefaultGroup {
+		t.Errorf(".env encrypted for %q", g)
+	}
+	if res[2] != "error" {
+		t.Errorf("plaintext for a group you are not in must fail, got %q", res[2])
+	}
+	if res[3] != string(opsCT) || res[4] != string(opsCT) {
+		t.Error("another group's ciphertext must pass through")
+	}
+	if res[5] != "P=1" {
+		t.Errorf("smudge prod: %q", res[5])
+	}
 }

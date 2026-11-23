@@ -8,20 +8,38 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
 	"github.com/juanfraherrero/keep-in-secret/internal/filter"
+	"github.com/juanfraherrero/keep-in-secret/internal/gitencrypt"
 	"github.com/juanfraherrero/keep-in-secret/internal/repo"
 )
 
 // These commands are run by git through the filter and hook configuration.
 
-var keySource = filter.Cached(func() (*crypt.Cipher, error) {
-	r, err := repo.Open()
-	if err != nil {
-		return nil, err
-	}
-	return r.Cipher()
+// openRepo is found once per process: filter-process serves many files.
+var openRepo = sync.OnceValues(repo.Open)
+
+var keySource = filter.Cached(filter.Keys{
+	Cipher: func(group string) (*crypt.Cipher, error) {
+		r, err := openRepo()
+		if err != nil {
+			return nil, err
+		}
+		return r.Cipher(group)
+	},
+	GroupOf: func(path string) (string, error) {
+		r, err := openRepo()
+		if err != nil {
+			return "", err
+		}
+		groups, err := r.SecretGroups([]string{path})
+		if err != nil {
+			return "", err
+		}
+		return groups[path], nil
+	},
 })
 
 func argPath(args []string) string {
@@ -74,8 +92,22 @@ func cmdPrecommit([]string) error {
 	if err != nil || !r.Initialized() {
 		return nil
 	}
+	ge, _ := r.ReadGitencrypt()
+	if _, errs := gitencrypt.Parse(ge); len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "kis: commit blocked, .gitencrypt has errors:\n    %v\n", errors.Join(errs...))
+		return exitError{}
+	}
 	if !r.AttributesInSync() {
 		fmt.Fprintln(os.Stderr, "kis: .gitencrypt changed but .gitattributes was not updated.\n     Run `kis sync`, then commit again.")
+		return exitError{}
+	}
+	wrong, err := r.StagedWrongGroup()
+	if err != nil {
+		return err
+	}
+	if len(wrong) > 0 {
+		fmt.Fprintf(os.Stderr, "kis: commit blocked, these files are encrypted for the wrong group (people outside their group could read them):\n    %s\n", strings.Join(wrong, "\n    "))
+		fmt.Fprintln(os.Stderr, "     Run `kis sync` to re-encrypt them (you need the key of both groups).")
 		return exitError{}
 	}
 	bad, err := r.StagedPlaintext()
@@ -99,7 +131,11 @@ func cmdMerge(args []string) error {
 		return fmt.Errorf("usage: kis merge BASE OURS THEIRS MARKER_SIZE PATH")
 	}
 	base, ours, theirs, markerSize, path := args[0], args[1], args[2], args[3], args[4]
-	c, err := keySource()
+	group, err := keySource.GroupOf(path)
+	if err != nil {
+		return err
+	}
+	c, err := keySource.Cipher(group)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kis: cannot merge %s: %v\n", path, err)
 		return exitError{}
@@ -120,8 +156,13 @@ func cmdMerge(args []string) error {
 		if err != nil {
 			return err
 		}
-		if crypt.IsEncrypted(data) {
-			if data, err = c.Decrypt(data); err != nil {
+		if g, ok := crypt.GroupOf(data); ok {
+			side, err := keySource.Cipher(g)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "kis: cannot merge %s: %v\n", path, err)
+				return exitError{}
+			}
+			if data, err = side.Decrypt(data); err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
 		}

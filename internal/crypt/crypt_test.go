@@ -43,3 +43,40 @@ func TestRejectsTamperingAndWrongKey(t *testing.T) {
 		t.Fatalf("plain: got %v", err)
 	}
 }
+
+func TestGroups(t *testing.T) {
+	master := NewKey()
+	def, _ := New(master)
+	prod, err := NewGroup(master, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := []byte("DB=prod\n")
+	ct := prod.Encrypt(plain)
+	if !IsEncrypted(ct) || !bytes.HasPrefix(ct, MagicV2) {
+		t.Fatalf("group file must use v2: %q", ct[:12])
+	}
+	if g, ok := GroupOf(ct); !ok || g != "prod" {
+		t.Fatalf("GroupOf = %q, %v", g, ok)
+	}
+	if g, _ := GroupOf(def.Encrypt(plain)); g != DefaultGroup {
+		t.Fatalf("default file group = %q", g)
+	}
+	if got, err := prod.Decrypt(ct); err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("round trip: %v", err)
+	}
+	// Same master key, other group: refused before touching the crypto.
+	if _, err := def.Decrypt(ct); err != ErrWrongGroup {
+		t.Fatalf("default cipher on prod file: %v", err)
+	}
+	// Renaming the group in the header breaks authentication.
+	staging, _ := NewGroup(master, "stage")
+	forged := append(append([]byte{}, MagicV2...), byte(5))
+	forged = append(append(forged, "stage"...), ct[len(MagicV2)+1+4:]...)
+	if _, err := staging.Decrypt(forged); err != ErrAuth {
+		t.Fatalf("forged group: %v", err)
+	}
+	if _, err := NewGroup(master, ""); err == nil {
+		t.Fatal("empty group accepted")
+	}
+}

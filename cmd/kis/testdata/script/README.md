@@ -32,6 +32,7 @@ Lines are commands; `!` in front expects failure (or negates an assertion);
 | `as NAME` | Become another person: separate `$HOME`, `~/.ssh`, kis key and git identity |
 | `encrypted FILE...` | The working copy is kis ciphertext (`! encrypted` = plaintext) |
 | `stored REV FILE...` | The blob git stores at REV is encrypted. `:` is the index: `stored : .env`, `stored HEAD .env` |
+| `group REV FILE GROUP` | The blob at REV is encrypted with GROUP's key (`default` for plain lines) |
 | `attr FILE ATTR VALUE` | `git check-attr` resolves ATTR (e.g. `filter`) to VALUE (`kis`, `unspecified`) |
 | `snapshot NAME` | Remember every file in the repo: working tree plus `.git/config`, `.git/hooks/`, `.git/kis/` |
 | `changed NAME +a ~m -d` | **Exactly** these files were added / modified / deleted since `snapshot NAME` (globs allowed) |

@@ -191,6 +191,23 @@ offset  size  field
 The leading NUL byte makes git treat the blob as **binary**, so it never tries
 to show a line diff of ciphertext.
 
+Files in a named group (`.env.production @prod`) use format **v2**, which
+records the group so the right key is picked on checkout:
+
+```
+offset  size  field
+0       8     MagicV2 00 4B 49 53 00 76 32 00   "\0KIS\0v2\0"
+8       1     g = length of the group name (1–255)
+9       g     group name, e.g. "prod"
+9+g     12    nonce   HMAC-SHA256(macKey, plaintext)[:12]
+21+g    n+16  AES-256-GCM ciphertext and tag, aad = bytes 0..9+g
+```
+
+The whole header is the GCM additional data, so relabelling a file's group
+fails authentication. Each group has its own random master key (same HKDF
+derivation). Default-group files stay **v1**, so a repository that never uses
+groups keeps byte-identical ciphertext.
+
 ---
 
 ## 3. Sharing the key (`internal/keys`, `internal/repo`)
@@ -224,13 +241,33 @@ partner's public key(s), ASCII-armored, and committed:
 `kis add ana github:ana` fetches `https://github.com/ana.keys` and keeps only the
 ed25519 and RSA keys.
 
+**Groups.** Each group's master key is wrapped the same way, under its own
+folder; membership is just which files exist:
+
+```
+.kis/keys/
+├── juan.age           # default group (everything without @group)
+├── ana.age
+└── prod/
+    ├── juan.age       # prod master key, for juan
+    └── deploy.age     # a member of prod only
+```
+
+`.gitencrypt` lines ending in `@prod` become `kis-group=prod` in
+`.gitattributes`. The clean filter asks git for that attribute to choose the
+key; smudge, textconv and the merge driver read the group from the v2 header.
+Without a group's key, its files stay ciphertext in your clone, pass through
+`git add` unchanged, and never block your other work. `kis sync` creates a
+group the first time `.gitencrypt` names it, with you as its member.
+
 ### Unlock
 
-`kis unlock` loads every identity it can find, tries each `.kis/keys/*.age`, and
-on success:
+`kis unlock` loads every identity it can find, tries each `.kis/keys/*.age`
+(and each group's folder), and on success:
 
-1. caches the raw master key at `.git/kis/key` (mode `0600`, never committed,
-   shared across worktrees through the common git dir),
+1. caches the raw master keys at `.git/kis/key` and `.git/kis/groups/GROUP`
+   (mode `0600`, never committed, shared across worktrees through the common
+   git dir), dropping keys of groups you are no longer in,
 2. wires the filters, merge driver and hook,
 3. re-checks-out tracked secrets so the smudge filter turns them into plaintext,
 4. re-encrypts any secret that was **staged as plaintext** while the filter was
@@ -242,12 +279,15 @@ as ciphertext. It refuses if you have uncommitted changes, unless you pass `--fo
 
 ### Revoke and rotate
 
-`kis remove ana` runs `rotate` for the remaining partners:
+`kis remove ana` rotates every group ana was in (`--group prod` limits it to
+one), and for each:
 
 1. it makes sure working copies are plaintext and have no uncommitted edits,
 2. it generates a new master key and re-wraps it for each remaining partner,
-3. it runs `git add --renormalize` on every secret (re-encrypting with the new key),
-4. it deletes `ana.age` and updates `recipients.toml`.
+3. it runs `git add --renormalize` on the group's secrets (re-encrypting with the new key),
+4. it deletes ana's `.age` file there; once she is in no group, also her `recipients.toml` entry.
+
+Other groups' keys and ciphertext are untouched.
 
 Partners who pull get the new `.age` file and the re-encrypted blobs. Their
 cached key is now stale, so they run `kis unlock` again to pick up the new one.

@@ -11,16 +11,22 @@ var fuzzKey = bytes.Repeat([]byte{7}, KeySize)
 // Encrypt produces for the recovered plaintext (no malleability).
 func FuzzDecrypt(f *testing.F) {
 	c, _ := New(fuzzKey)
+	g, _ := NewGroup(fuzzKey, "prod")
 	f.Add(c.Encrypt([]byte("A=1\n")))
+	f.Add(g.Encrypt([]byte("A=1\n")))
 	f.Add(append([]byte{}, Magic...))
+	f.Add(append(append([]byte{}, MagicV2...), 200))
 	f.Add([]byte("plain"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		plain, err := c.Decrypt(data)
-		if err != nil {
-			return
-		}
-		if !bytes.Equal(c.Encrypt(plain), data) {
-			t.Fatalf("accepted ciphertext that Encrypt would not produce")
+		GroupOf(data) // must not panic either
+		for _, c := range []*Cipher{c, g} {
+			plain, err := c.Decrypt(data)
+			if err != nil {
+				continue
+			}
+			if !bytes.Equal(c.Encrypt(plain), data) {
+				t.Fatalf("accepted ciphertext that Encrypt would not produce")
+			}
 		}
 	})
 }

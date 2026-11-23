@@ -155,7 +155,8 @@ also works in CI and in locked clones.
 - `--since REV` also checks every commit in `REV..HEAD`, so a secret leaked in an
   earlier commit of a pull request and "fixed" later is still caught.
 - `--json` prints the same report as data: `safe_to_push`, `encrypted_files`, each file's `state`
-  (`encrypted`, `plaintext-index`, `plaintext-head`, `untracked`, `ignored`) and
+  (`encrypted`, `plaintext-index`, `plaintext-head`, `wrong-group`, `untracked`,
+  `ignored`), its `group` and whether you can read it, `groups` with members, and
   `problems`, each with a `severity` (`error` blocks, `warning` doesn't) and a `fix`.
 
 Run it on every pull request (GitHub Actions):
@@ -201,6 +202,32 @@ as `config/secrets.json` or `appsettings.Development.json`, is one line in
 `.gitencrypt` plus `kis sync`. Binary files (keystores, certificates) work too;
 they just can't be merged line by line.
 
+## Groups: secrets for some people only
+
+By default everyone you add can read every encrypted file. When some files are
+only for some people (production credentials, say), name a group at the end of
+their `.gitencrypt` line:
+
+```
+.env
+.env.*
+.env.production @prod
+```
+
+```sh
+kis sync                          # creates the prod group, with you in it
+kis add deploy age1… --group prod # a partner who only gets prod
+kis add ana --group prod          # an existing partner joins prod
+kis remove ana --group prod       # leaves prod; only the prod key rotates
+```
+
+People outside a group still clone, pull, edit and commit as usual: that
+group's files just stay ciphertext in their clone. `kis status` shows each
+file's group and whether you can read it, and blocks (like the pre-commit
+check) a file encrypted with the wrong group's key. A file belongs to one
+group; to share it with more people, add them to that group. Without any
+`@group`, kis never mentions groups.
+
 ## Coding agents
 
 Agents are trained to never commit `.env`, so left alone they may "fix" a kis
@@ -223,9 +250,9 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
-| `kis add NAME KEY\|github:USER\|FILE.pub…` | Give someone access |
-| `kis remove NAME [--no-rotate]` | Revoke access and rotate the master key |
-| `kis rotate` | New master key, re-encrypt everything |
+| `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
+| `kis remove NAME [--group G] [--no-rotate]` | Revoke access and rotate the affected keys |
+| `kis rotate [--group G]` | New master key(s), re-encrypt those files |
 | `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook |
 | `kis lock [--force]` | Forget the key here and turn files back into ciphertext |
 | `kis status [--check] [--json] [--since REV]` | State, partners, encrypted files, and whether it is safe to push |

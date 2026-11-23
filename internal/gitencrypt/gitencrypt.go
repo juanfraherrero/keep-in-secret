@@ -4,8 +4,13 @@
 package gitencrypt
 
 import (
+	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
 )
 
 const (
@@ -28,25 +33,88 @@ const DefaultContent = `# Files matching these patterns are encrypted in git by 
 // in the block so a broad pattern like "*" cannot encrypt them.
 var alwaysPlain = []string{".gitencrypt", ".gitattributes", ".gitignore", ".kis/**"}
 
-// Block renders the managed .gitattributes block for the given .gitencrypt content.
-func Block(gitencrypt string) string {
-	var b strings.Builder
-	b.WriteString(beginMark + "\n")
-	for _, line := range strings.Split(gitencrypt, "\n") {
+// Rule is one pattern line of .gitencrypt.
+type Rule struct {
+	Pattern string
+	Negate  bool
+	Group   string // crypt.DefaultGroup ("default") unless the line ends in @NAME
+}
+
+// GroupAttr is the gitattribute naming a file's key group.
+const GroupAttr = "kis-group"
+
+const defaultGroup = crypt.DefaultGroup
+
+var validGroup = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// Parse reads .gitencrypt. A line may end in " @GROUP" to encrypt its files
+// with that group's key instead of the default one. Malformed lines are
+// reported in errs and parsed as best as possible, so Block stays total.
+func Parse(content string) (rules []Rule, errs []error) {
+	for n, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		negate := strings.HasPrefix(line, "!")
-		if negate {
-			line = line[1:]
+		r := Rule{Group: defaultGroup}
+		if i := strings.LastIndexAny(line, " \t"); i >= 0 && strings.HasPrefix(line[i+1:], "@") {
+			r.Group = line[i+2:]
+			line = strings.TrimSpace(line[:i])
+			if !validGroup.MatchString(r.Group) {
+				errs = append(errs, fmt.Errorf("%s:%d: invalid group %q: use letters, digits, '.', '_' or '-'", FileName, n+1, "@"+r.Group))
+				r.Group = defaultGroup
+			}
+			if j := strings.LastIndexAny(line, " \t"); j >= 0 && strings.HasPrefix(line[j+1:], "@") {
+				errs = append(errs, fmt.Errorf("%s:%d: a file belongs to one group; add people to that group instead of listing several", FileName, n+1))
+				line = strings.TrimSpace(line[:j])
+			}
 		}
-		attrs := " filter=kis diff=kis merge=kis\n"
-		if negate {
-			attrs = " !filter !diff !merge\n"
+		r.Negate = strings.HasPrefix(line, "!")
+		r.Pattern = strings.TrimPrefix(line, "!")
+		if r.Negate && r.Group != defaultGroup {
+			errs = append(errs, fmt.Errorf("%s:%d: a ! line excludes files, it takes no group", FileName, n+1))
+			r.Group = defaultGroup
 		}
-		for _, p := range attrPatterns(line) {
-			b.WriteString(quote(p) + attrs)
+		rules = append(rules, r)
+	}
+	return rules, errs
+}
+
+// Groups lists the named groups .gitencrypt uses, sorted, without "default".
+func Groups(content string) []string {
+	rules, _ := Parse(content)
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range rules {
+		if r.Group != defaultGroup && !seen[r.Group] {
+			seen[r.Group] = true
+			out = append(out, r.Group)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Block renders the managed .gitattributes block for the given .gitencrypt content.
+func Block(gitencrypt string) string {
+	rules, _ := Parse(gitencrypt)
+	// Only once groups are in use do default lines need to reset the group
+	// (later lines win), so repositories without groups keep the old block.
+	grouped := len(Groups(gitencrypt)) > 0
+	var b strings.Builder
+	b.WriteString(beginMark + "\n")
+	for _, r := range rules {
+		attrs := " filter=kis diff=kis merge=kis"
+		switch {
+		case r.Negate:
+			attrs = " !filter !diff !merge"
+		case r.Group != defaultGroup:
+			attrs += " " + GroupAttr + "=" + r.Group
+		case grouped:
+			attrs += " !" + GroupAttr
+		}
+		for _, p := range attrPatterns(r.Pattern) {
+			b.WriteString(quote(p) + attrs + "\n")
 		}
 	}
 	for _, p := range alwaysPlain {
