@@ -60,5 +60,6 @@ jobs:
         with:
           version: "~> v2"
           args: release --snapshot --clean
-      - run: ./dist/kis_linux_amd64_v1/kis version
+      - name: archive install.sh downloads works
+        run: tar -xzf dist/kis_linux_amd64.tar.gz -C "$RUNNER_TEMP" kis && "$RUNNER_TEMP/kis" version
       - run: sh -n install.sh
