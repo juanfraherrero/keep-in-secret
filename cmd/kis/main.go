@@ -22,12 +22,12 @@ var commands []command
 
 func init() {
 	commands = []command{
-		{name: "init", usage: "init [--ssh] [--preset LIST] [--no-agents] [-y] ...", summary: "Set up encryption in this repository", run: cmdInit},
+		{name: "init", usage: "init [--ssh] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
 		{name: "pubkey", usage: "pubkey", summary: "Print the public keys found on this machine", run: cmdPubkey},
-		{name: "add", usage: "add NAME KEY|github:USER|FILE.pub... [--force]", summary: "Give a partner access", run: cmdAdd},
-		{name: "remove", usage: "remove NAME [--no-rotate]", summary: "Revoke a partner and rotate the repository key", run: cmdRemove},
-		{name: "rotate", usage: "rotate", summary: "Replace the repository key and re-encrypt everything", run: cmdRotate},
+		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub] [--group G]", summary: "Give a partner access", run: cmdAdd},
+		{name: "remove", usage: "remove NAME [--group G] [--no-rotate]", summary: "Revoke access and rotate the affected keys", run: cmdRemove},
+		{name: "rotate", usage: "rotate [--group G]", summary: "Replace the key(s) and re-encrypt", run: cmdRotate},
 		{name: "unlock", usage: "unlock [--identity PATH]", summary: "Get access after cloning: decrypts the files", run: cmdUnlock},
 		{name: "lock", usage: "lock [--force]", summary: "Forget the key on this machine and re-encrypt the files", run: cmdLock},
 		{name: "status", usage: "status [--check] [--json] [--since REV]", summary: "Show encryption state, partners and encrypted files", run: cmdStatus},
@@ -47,7 +47,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "kis (keep-in-secret): commit secrets to git, encrypted.\n\nUsage:\n")
 	for _, c := range commands {
 		if !c.hidden {
-			fmt.Fprintf(os.Stderr, "  kis %-48s %s\n", c.usage, c.summary)
+			fmt.Fprintf(os.Stderr, "  kis %-50s %s\n", c.usage, c.summary)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "\nList the files to encrypt in .gitencrypt (same syntax as .gitignore).\n")

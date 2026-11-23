@@ -123,56 +123,124 @@ func (r *Repo) writeFile(rel string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(p, data, perm)
 }
 
-func keyFile(name string) string { return keysDir + "/" + name + ".age" }
+// Each group has its own master key, wrapped once per member. Default-group
+// files keep the original layout: .kis/keys/NAME.age; group GROUP lives in
+// .kis/keys/GROUP/NAME.age. Membership is simply which files exist.
+func keyFile(group, name string) string {
+	if group == crypt.DefaultGroup {
+		return keysDir + "/" + name + ".age"
+	}
+	return keysDir + "/" + group + "/" + name + ".age"
+}
 
-// WrapFor writes the master key encrypted to one partner's public keys.
-func (r *Repo) WrapFor(name string, master []byte, pubs []string) error {
+// WrapFor writes a group's master key encrypted to one partner's public keys.
+func (r *Repo) WrapFor(group, name string, master []byte, pubs []string) error {
 	wrapped, err := keys.Wrap(master, pubs)
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
-	return r.writeFile(keyFile(name), wrapped, 0o644)
+	return r.writeFile(keyFile(group, name), wrapped, 0o644)
 }
 
-func (r *Repo) RemoveKeyFile(name string) error {
-	err := os.Remove(r.path(keyFile(name)))
+func (r *Repo) RemoveKeyFile(group, name string) error {
+	err := os.Remove(r.path(keyFile(group, name)))
 	if os.IsNotExist(err) {
 		return nil
+	}
+	if err == nil && group != crypt.DefaultGroup {
+		_ = os.Remove(filepath.Dir(r.path(keyFile(group, name)))) // only if now empty
 	}
 	return err
 }
 
-// UnwrapMasterKey tries every committed key file with the given identities.
-func (r *Repo) UnwrapMasterKey(ids []age.Identity) ([]byte, string, error) {
-	files, _ := filepath.Glob(filepath.Join(r.path(keysDir), "*.age"))
-	if len(files) == 0 {
-		return nil, "", fmt.Errorf("no key files in %s", keysDir)
-	}
-	for _, f := range files {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			return nil, "", err
-		}
-		master, err := keys.Unwrap(data, ids...)
-		if err == nil && len(master) == crypt.KeySize {
-			return master, strings.TrimSuffix(filepath.Base(f), ".age"), nil
-		}
-		// A key matched but could not be used (e.g. wrong SSH passphrase).
-		var noMatch *age.NoIdentityMatchError
-		if err != nil && !errors.As(err, &noMatch) {
-			return nil, "", err
+// Groups lists the groups that have a key: default first, then by name.
+func (r *Repo) Groups() []string {
+	out := []string{crypt.DefaultGroup}
+	entries, _ := os.ReadDir(r.path(keysDir))
+	for _, e := range entries {
+		if e.IsDir() && len(r.Members(e.Name())) > 0 {
+			out = append(out, e.Name())
 		}
 	}
-	return nil, "", ErrNoAccess
+	return out
 }
 
-// Master key cache: .git/kis/key, never committed.
+// HasGroup reports whether group has a key, i.e. at least one member.
+func (r *Repo) HasGroup(group string) bool { return len(r.Members(group)) > 0 }
 
-func (r *Repo) cachePath() string { return filepath.Join(r.GitDir, "kis", "key") }
+// Members lists who holds a group's key.
+func (r *Repo) Members(group string) []string {
+	files, _ := filepath.Glob(r.path(keyFile(group, "*")))
+	var names []string
+	for _, f := range files {
+		names = append(names, strings.TrimSuffix(filepath.Base(f), ".age"))
+	}
+	sort.Strings(names)
+	return names
+}
 
-func (r *Repo) MasterKey() ([]byte, error) {
-	k, err := os.ReadFile(r.cachePath())
+// GroupsOf lists the groups a partner is a member of.
+func (r *Repo) GroupsOf(name string) []string {
+	var out []string
+	for _, g := range r.Groups() {
+		if _, err := os.Stat(r.path(keyFile(g, name))); err == nil {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// UnwrapKeys opens every group key the given identities have access to. It
+// returns the keys by group and the partner name they belong to.
+func (r *Repo) UnwrapKeys(ids []age.Identity) (map[string][]byte, string, error) {
+	got := map[string][]byte{}
+	name := ""
+	for _, g := range r.Groups() {
+		candidates := r.Members(g)
+		if name != "" {
+			candidates = []string{name}
+		}
+		for _, n := range candidates {
+			data, err := os.ReadFile(r.path(keyFile(g, n)))
+			if err != nil {
+				continue
+			}
+			master, err := keys.Unwrap(data, ids...)
+			if err == nil && len(master) == crypt.KeySize {
+				got[g], name = master, n
+				break
+			}
+			// A key matched but could not be used (e.g. wrong SSH passphrase).
+			var noMatch *age.NoIdentityMatchError
+			if err != nil && !errors.As(err, &noMatch) {
+				return nil, "", err
+			}
+		}
+	}
+	if len(got) == 0 {
+		return nil, "", ErrNoAccess
+	}
+	return got, name, nil
+}
+
+// Key cache, never committed: .git/kis/key for the default group (the
+// original location), .git/kis/groups/GROUP for the others.
+
+func (r *Repo) cachePath(group string) string {
+	if group == crypt.DefaultGroup {
+		return filepath.Join(r.GitDir, "kis", "key")
+	}
+	return filepath.Join(r.GitDir, "kis", "groups", group)
+}
+
+// GroupKey returns a group's cached master key, ErrLocked when this clone
+// has none (locked, or not a member).
+func (r *Repo) GroupKey(group string) ([]byte, error) {
+	k, err := os.ReadFile(r.cachePath(group))
 	if os.IsNotExist(err) {
+		if group != crypt.DefaultGroup {
+			return nil, fmt.Errorf("no key for group %s here: ask a member to run `kis add YOUR_NAME --group %s`, then `kis unlock`", group, group)
+		}
 		return nil, ErrLocked
 	}
 	if err != nil {
@@ -184,15 +252,34 @@ func (r *Repo) MasterKey() ([]byte, error) {
 	return k, nil
 }
 
-func (r *Repo) SaveMasterKey(k []byte) error {
-	if err := os.MkdirAll(filepath.Dir(r.cachePath()), 0o700); err != nil {
+// MasterKey is the default group's key.
+func (r *Repo) MasterKey() ([]byte, error) { return r.GroupKey(crypt.DefaultGroup) }
+
+func (r *Repo) SaveGroupKey(group string, k []byte) error {
+	p := r.cachePath(group)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(r.cachePath(), k, 0o600)
+	return os.WriteFile(p, k, 0o600)
 }
 
-func (r *Repo) ForgetMasterKey() error {
-	err := os.Remove(r.cachePath())
+// HeldGroups lists the groups whose key is cached in this clone.
+func (r *Repo) HeldGroups() []string {
+	var out []string
+	for _, g := range r.Groups() {
+		if _, err := r.GroupKey(g); err == nil {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// ForgetKeys removes every cached group key.
+func (r *Repo) ForgetKeys() error {
+	if err := os.RemoveAll(filepath.Join(r.GitDir, "kis", "groups")); err != nil {
+		return err
+	}
+	err := os.Remove(r.cachePath(crypt.DefaultGroup))
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -209,12 +296,34 @@ func (r *Repo) TempDir() (string, error) {
 	return os.MkdirTemp(dir, "tmp-")
 }
 
-func (r *Repo) Cipher() (*crypt.Cipher, error) {
-	k, err := r.MasterKey()
+// Cipher returns the cipher for a group's files.
+func (r *Repo) Cipher(group string) (*crypt.Cipher, error) {
+	k, err := r.GroupKey(group)
 	if err != nil {
 		return nil, err
 	}
-	return crypt.New(k)
+	return crypt.NewGroup(k, group)
+}
+
+// SecretGroups maps each path to the group its kis-group attribute names.
+func (r *Repo) SecretGroups(paths []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(paths) == 0 {
+		return out, nil
+	}
+	res, err := gitx.RunInput(r.Root, []byte(strings.Join(paths, "\x00")+"\x00"), "check-attr", "-z", "--stdin", gitencrypt.GroupAttr)
+	if err != nil {
+		return nil, err
+	}
+	parts := gitx.SplitZ(res)
+	for i := 0; i+2 < len(parts); i += 3 {
+		g := parts[i+2]
+		if g == "unspecified" || g == "unset" || g == "set" || g == "" {
+			g = crypt.DefaultGroup
+		}
+		out[parts[i]] = g
+	}
+	return out, nil
 }
 
 // .gitencrypt / .gitattributes
@@ -359,6 +468,45 @@ func (r *Repo) StagedPlaintext() ([]string, error) {
 			return nil, err
 		}
 		if !crypt.IsEncrypted(blob) {
+			bad = append(bad, p)
+		}
+	}
+	return bad, nil
+}
+
+// StagedWrongGroup lists staged secrets whose ciphertext was made with a
+// different group's key than .gitencrypt assigns, which would let people
+// outside the group read them.
+func (r *Repo) StagedWrongGroup() ([]string, error) {
+	out, err := gitx.RunInput(r.Root, nil, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR")
+	if err != nil {
+		return nil, err
+	}
+	return r.wrongGroup(gitx.SplitZ(out), ":")
+}
+
+// wrongGroup returns the paths whose encrypted blob at rev (":" for the
+// index) is for another group than their kis-group attribute.
+func (r *Repo) wrongGroup(paths []string, rev string) ([]string, error) {
+	secrets, err := r.filterMatches(paths, true)
+	if err != nil {
+		return nil, err
+	}
+	want, err := r.SecretGroups(secrets)
+	if err != nil {
+		return nil, err
+	}
+	var bad []string
+	for _, p := range secrets {
+		spec := rev + ":" + p
+		if rev == ":" {
+			spec = ":" + p
+		}
+		blob, err := gitx.RunInput(r.Root, nil, "cat-file", "blob", spec)
+		if err != nil {
+			continue
+		}
+		if g, ok := crypt.GroupOf(blob); ok && g != want[p] {
 			bad = append(bad, p)
 		}
 	}

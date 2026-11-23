@@ -160,6 +160,28 @@ var scriptCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 		}
 	},
 
+	// group REV FILE GROUP: the blob at REV (":" = index) is encrypted for GROUP.
+	"group": func(ts *testscript.TestScript, neg bool, args []string) {
+		if len(args) != 3 {
+			ts.Fatalf("usage: group REV FILE GROUP")
+		}
+		spec := args[0] + ":" + args[1]
+		if args[0] == ":" {
+			spec = ":" + args[1]
+		}
+		out, err := exec.Command("git", "-C", ts.MkAbs("."), "cat-file", "blob", spec).Output()
+		if err != nil {
+			ts.Fatalf("git cat-file %s: %v", spec, err)
+		}
+		g, ok := crypt.GroupOf(out)
+		if !ok {
+			ts.Fatalf("%s is not encrypted: %q", spec, preview(out))
+		}
+		if (g == args[2]) == neg {
+			ts.Fatalf("%s is encrypted for group %q, want %s%q", spec, g, map[bool]string{true: "not ", false: ""}[neg], args[2])
+		}
+	},
+
 	// attr FILE ATTR VALUE: git check-attr resolves ATTR to VALUE.
 	"attr": func(ts *testscript.TestScript, neg bool, args []string) {
 		if len(args) != 3 {

@@ -33,8 +33,9 @@ is plaintext, git history and the remote only hold ciphertext.
   leave this machine in plaintext.
 - To encrypt another file, add its path to ~.gitencrypt~ and run ~kis sync~.
   Never edit the kis block in ~.gitattributes~ by hand.
-- A secret file that is binary and starts with ~KIS~ means this clone is locked:
-  ~kis unlock~ needs the developer's private key, so ask them instead of working around it.
+- A secret file that is binary and starts with ~KIS~ means this clone is locked,
+  or isn't in that file's group (~.gitencrypt~ lines ending in ~@GROUP~). That is
+  expected: leave the file alone. ~kis unlock~ needs the developer's private key.
 - Do not copy secret values into code, logs, commit messages, pull requests or
   chat unless the task requires it.
 `, "~", "`") + endMark + "\n"

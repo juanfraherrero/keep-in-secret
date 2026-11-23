@@ -15,30 +15,41 @@ import (
 	"github.com/juanfraherrero/keep-in-secret/internal/crypt"
 )
 
-// KeySource returns the repository cipher, or an error when locked.
-type KeySource func() (*crypt.Cipher, error)
+// Keys gives the filter the cipher of each group and the group each path
+// belongs to (its kis-group attribute; crypt.DefaultGroup when unset).
+type Keys struct {
+	Cipher  func(group string) (*crypt.Cipher, error) // error when that key is unavailable
+	GroupOf func(path string) (string, error)
+}
 
-// Clean encrypts plaintext on its way into git. It refuses to store plaintext
-// when the key is unavailable, since that would leak the secret.
-func Clean(data []byte, path string, key KeySource) ([]byte, error) {
+// Clean encrypts plaintext on its way into git with the key of the path's
+// group. It refuses to store plaintext when that key is unavailable, since
+// that would leak the secret. Ciphertext passes through, so a file whose
+// group you are not in can still be committed alongside your changes.
+func Clean(data []byte, path string, keys Keys) ([]byte, error) {
 	if crypt.IsEncrypted(data) {
 		return data, nil
 	}
-	c, err := key()
+	group, err := keys.GroupOf(path)
+	if err != nil {
+		return nil, fmt.Errorf("refusing to store %s in plaintext: %w", path, err)
+	}
+	c, err := keys.Cipher(group)
 	if err != nil {
 		return nil, fmt.Errorf("refusing to store %s in plaintext: %w", path, err)
 	}
 	return c.Encrypt(data), nil
 }
 
-// Smudge decrypts content on its way out of git. Without a key, or with a key
-// that does not match, the ciphertext is passed through unchanged so checkouts
-// never fail.
-func Smudge(data []byte, path string, key KeySource) []byte {
-	if !crypt.IsEncrypted(data) {
+// Smudge decrypts content on its way out of git, with the key of the group
+// named in its header. Without that key, or with one that does not match,
+// the ciphertext is passed through unchanged so checkouts never fail.
+func Smudge(data []byte, path string, keys Keys) []byte {
+	group, ok := crypt.GroupOf(data)
+	if !ok {
 		return data
 	}
-	c, err := key()
+	c, err := keys.Cipher(group)
 	if err != nil {
 		return data
 	}
@@ -50,18 +61,22 @@ func Smudge(data []byte, path string, key KeySource) []byte {
 	return plain
 }
 
-// Cached wraps a KeySource so the key is loaded at most once.
-func Cached(src KeySource) KeySource {
-	var c *crypt.Cipher
-	var err error
-	loaded := false
-	return func() (*crypt.Cipher, error) {
-		if !loaded {
-			c, err = src()
-			loaded = true
-		}
-		return c, err
+// Cached wraps keys so each group's key is loaded at most once.
+func Cached(keys Keys) Keys {
+	type entry struct {
+		c   *crypt.Cipher
+		err error
 	}
+	loaded := map[string]entry{}
+	cipher := func(group string) (*crypt.Cipher, error) {
+		e, ok := loaded[group]
+		if !ok {
+			e.c, e.err = keys.Cipher(group)
+			loaded[group] = e
+		}
+		return e.c, e.err
+	}
+	return Keys{Cipher: cipher, GroupOf: keys.GroupOf}
 }
 
 const maxPktData = 65516
@@ -151,7 +166,7 @@ func (p pktWriter) content(b []byte) error {
 
 // Process speaks git's long-running filter protocol on r/w until git closes
 // the pipe.
-func Process(r io.Reader, w io.Writer, key KeySource) error {
+func Process(r io.Reader, w io.Writer, keys Keys) error {
 	in := pktReader{bufio.NewReader(r)}
 	out := pktWriter{bufio.NewWriter(w)}
 
@@ -199,9 +214,9 @@ func Process(r io.Reader, w io.Writer, key KeySource) error {
 		var result []byte
 		switch req["command"] {
 		case "clean":
-			result, err = Clean(data, path, key)
+			result, err = Clean(data, path, keys)
 		case "smudge":
-			result = Smudge(data, path, key)
+			result = Smudge(data, path, keys)
 		default:
 			err = fmt.Errorf("unknown command %q", req["command"])
 		}
