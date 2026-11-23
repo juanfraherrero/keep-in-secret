@@ -30,18 +30,24 @@ Terraform variables, Rails and Spring. Built to be driven by coding agents too:
 > upgrade command for your OS.
 
 ```sh
-go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
+curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
 ```
 
-Or from a clone: `make install` (also links `git-kis`, so `git kis …` works).
+That downloads the latest [release](https://github.com/juanfraherrero/keep-in-secret/releases)
+for macOS or Linux, checks its checksum and installs `kis` (plus `git-kis`, so
+`git kis …` works) to `/usr/local/bin`, or `~/.local/bin` when that isn't writable.
+`KIS_VERSION=v0.1.0` pins a version. On Windows, download the zip from the
+releases page. With Go: `go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest`.
+
 Everyone who works on the repository installs `kis` once, like `git-lfs`.
+`kis version` prints what you have.
 
 ### Requirements
 
 | | Minimum | Notes |
 |---|---|---|
 | git | **2.28** | Tested in CI on 2.28, 2.30, 2.34, 2.39, 2.43, 2.45, 2.52 and 2.55 |
-| Go | 1.27 | Only to build kis; not needed at runtime |
+| Go | 1.27 | Only to build from source; release binaries need nothing |
 | OS | macOS, Linux, Windows | All three run the full test suite in CI |
 
 ### Upgrading git
