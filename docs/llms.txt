@@ -22,7 +22,8 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - Use `kis status --json` to read state as data. Fields: `initialized`,
   `safe_to_push`, `encrypted_files`, `unlocked`, `files[].state` (`encrypted`, `plaintext-index`,
   `plaintext-head`, `wrong-group`, `untracked`, `ignored`; plus `group`,
-  `readable`), `groups[]` and `problems[]` with `severity`
+  `readable`), `groups[]`, `you` (the partner this machine acts as; absent when
+  no key here has access) with `your_key`, and `problems[]` with `severity`
   (`error` blocks a push, `warning` does not), `path`, `commit`, `message`, `fix`.
 - To encrypt another file: add its path to `.gitencrypt` (gitignore syntax), then
   run `kis sync`. Never edit the kis block of `.gitattributes` by hand.

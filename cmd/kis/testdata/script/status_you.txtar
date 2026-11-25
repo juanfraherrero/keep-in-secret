@@ -1,0 +1,59 @@
+# kis status says which partner this machine acts as, and with which key,
+# so an agent can tell before running add, remove or rotate.
+
+exec kis keygen
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git push -q $REMOTE HEAD:main
+
+exec kis status
+stdout '^you +owner \(key .*identity\)$'
+exec kis status --json
+stdout '"you": "owner"'
+stdout '"your_key": ".*identity"'
+
+# Someone with a key that isn't a partner yet.
+as ana
+exec kis keygen
+pubkey ANA
+readvar ANA_SECRET $KIS_KEY
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis status
+stdout '^you +not a partner: no key here has access \(see `kis pubkey`\)$'
+exec kis status --json
+! stdout '"you"'
+! stdout '"your_key"'
+
+# Once added, the same clone knows it is ana, even before unlocking.
+as owner
+cd $WORK/app
+exec kis add ana $ANA
+exec git commit -qm 'add ana'
+exec git push -q $REMOTE HEAD:main
+as ana
+cd $WORK/ana
+exec git pull -q $REMOTE main
+exec kis status
+stdout 'LOCKED'
+stdout '^you +ana \(key .*identity\)$'
+
+# With KIS_PRIVATE_KEY set, that key is the identity, wherever it runs.
+as owner
+cd $WORK/app
+env KIS_PRIVATE_KEY=$ANA_SECRET
+exec kis status
+stdout '^you +ana \(key KIS_PRIVATE_KEY\)$'
+exec kis status --json
+stdout '"you": "ana"'
+stdout '"your_key": "KIS_PRIVATE_KEY"'
+env KIS_PRIVATE_KEY=
+exec kis status
+stdout '^you +owner '
+
+-- app/.env --
+API_KEY=dev

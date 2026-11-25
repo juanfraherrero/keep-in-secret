@@ -162,7 +162,9 @@ also works in CI and in locked clones.
   earlier commit of a pull request and "fixed" later is still caught.
 - `--json` prints the same report as data: `safe_to_push`, `encrypted_files`, each file's `state`
   (`encrypted`, `plaintext-index`, `plaintext-head`, `wrong-group`, `untracked`,
-  `ignored`), its `group` and whether you can read it, `groups` with members, and
+  `ignored`), its `group` and whether you can read it, `groups` with members,
+  `you` (the partner this machine acts as) with `your_key` (its file, or
+  `KIS_PRIVATE_KEY`), and
   `problems`, each with a `severity` (`error` blocks, `warning` doesn't) and a `fix`.
 
 Run it on every pull request (GitHub Actions):
