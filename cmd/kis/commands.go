@@ -710,26 +710,35 @@ func groupKey(r *repo.Repo, rs repo.Recipients, group string) (master []byte, cr
 
 // whoAmI finds the partner whose public key is one of this machine's keys.
 func whoAmI(rs repo.Recipients) (string, error) {
-	mine := map[string]bool{}
+	name, _, err := identify(rs)
+	return name, err
+}
+
+// identify is whoAmI plus where that key comes from: its file, or
+// KIS_PRIVATE_KEY.
+func identify(rs repo.Recipients) (name, source string, err error) {
+	mine := map[string]string{} // public key → source
 	if _, pub, ok, err := keys.EnvIdentity(); err != nil {
-		return "", err
+		return "", "", err
 	} else if ok {
-		mine[normalizeKey(pub)] = true
+		mine[normalizeKey(pub)] = keys.EnvPrivateKey
 	} else {
 		for _, c := range keys.Candidates() {
 			if pub, err := keys.PublicKey(c.Path); err == nil {
-				mine[normalizeKey(pub)] = true
+				if _, seen := mine[normalizeKey(pub)]; !seen {
+					mine[normalizeKey(pub)] = c.Path
+				}
 			}
 		}
 	}
 	for _, n := range rs.Names() {
 		for _, pub := range rs[n] {
-			if mine[normalizeKey(pub)] {
-				return n, nil
+			if src, ok := mine[normalizeKey(pub)]; ok {
+				return n, src, nil
 			}
 		}
 	}
-	return "", errors.New("none of this machine's keys belongs to a partner (see `kis pubkey` and `kis status`)")
+	return "", "", errors.New("none of this machine's keys belongs to a partner (see `kis pubkey` and `kis status`)")
 }
 
 // normalizeKey drops an SSH key's comment so the same key always compares equal.
@@ -1108,6 +1117,8 @@ type statusJSON struct {
 	Repository  string            `json:"repository,omitempty"`
 	Git         *gitJSON          `json:"git,omitempty"`
 	Unlocked    bool              `json:"unlocked"`
+	You         string            `json:"you,omitempty"`      // the partner this machine's key belongs to
+	YourKey     string            `json:"your_key,omitempty"` // that key's file, or KIS_PRIVATE_KEY
 	GitFilters  bool              `json:"git_filters"`
 	PreCommit   bool              `json:"pre_commit_hook"`
 	InSync      bool              `json:"attributes_in_sync"`
@@ -1171,6 +1182,7 @@ func collectStatus(since string) (statusJSON, error) {
 		Files:       audit.Files,
 		Problems:    audit.Problems,
 	}
+	st.You, st.YourKey, _ = identify(rs)
 	if v, err := gitx.Version(); err == nil {
 		st.Git = &gitJSON{fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]), gitx.Supported(v)}
 	}
@@ -1236,6 +1248,11 @@ func printStatus(st statusJSON) {
 		state = "LOCKED (run `kis unlock`)"
 	}
 	fmt.Printf("state           %s\n", state)
+	if st.You != "" {
+		fmt.Printf("you             %s (key %s)\n", st.You, st.YourKey)
+	} else {
+		fmt.Println("you             not a partner: no key here has access (see `kis pubkey`)")
+	}
 	fmt.Printf("git filters     %s\n", yesNo(st.GitFilters, "kis unlock"))
 	fmt.Printf("pre-commit      %s\n", yesNo(st.PreCommit, "kis unlock"))
 	sync := "ok"
