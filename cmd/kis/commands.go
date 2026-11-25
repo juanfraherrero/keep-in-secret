@@ -534,6 +534,12 @@ func printKeygenNext(pub string) {
 }
 
 func cmdPubkey([]string) error {
+	if _, pub, ok, err := keys.EnvIdentity(); err != nil {
+		return err
+	} else if ok {
+		fmt.Printf("# %s (%s); key files are ignored while it is set\n%s\n", keys.EnvPrivateKey, keys.RecipientType(pub), pub)
+		return nil
+	}
 	cands := keys.Candidates()
 	if len(cands) == 0 {
 		return errors.New("no keys found: run `kis keygen`")
@@ -555,10 +561,22 @@ func cmdAdd(args []string) error {
 	fs := newFlags("add")
 	force := fs.Bool("force", false, "replace the keys of an existing partner")
 	groupFlag := fs.String("group", "", "groups to add them to, comma-separated (default: the default group)")
+	newKey := fs.Bool("new-key", false, "create their key pair now and print the private key once (for CI and cloud agents)")
 	pos := parseFlags(fs, args)
 	if len(pos) < 1 {
 		fs.Usage()
 		return exitError{}
+	}
+	var secret string
+	if *newKey {
+		if len(pos) > 1 {
+			return errors.New("--new-key creates the key, so don't pass one")
+		}
+		pub, err := "", error(nil)
+		if secret, pub, err = keys.NewIdentity(); err != nil {
+			return err
+		}
+		pos = append(pos, pub)
 	}
 	groups, err := parseGroups(*groupFlag)
 	if err != nil {
@@ -571,7 +589,14 @@ func cmdAdd(args []string) error {
 	if err := addRecipient(r, pos[0], pos[1:], groups, *force); err != nil {
 		return err
 	}
-	fmt.Printf("\nNow commit and push, then ask %s to run:  kis unlock\n", pos[0])
+	if secret == "" {
+		fmt.Printf("\nNow commit and push, then ask %s to run:  kis unlock\n", pos[0])
+		return nil
+	}
+	fmt.Printf("\nPrivate key of %s (shown once, saved nowhere):\n\n    %s\n\n", pos[0], secret)
+	fmt.Printf("Store it as the %s secret of the CI or cloud agent that acts as %s;\n", keys.EnvPrivateKey, pos[0])
+	fmt.Println("there, `kis unlock` reads it from the environment.")
+	fmt.Println("Now commit and push. Lost the key? kis add " + pos[0] + " --new-key --force")
 	return nil
 }
 
@@ -686,9 +711,15 @@ func groupKey(r *repo.Repo, rs repo.Recipients, group string) (master []byte, cr
 // whoAmI finds the partner whose public key is one of this machine's keys.
 func whoAmI(rs repo.Recipients) (string, error) {
 	mine := map[string]bool{}
-	for _, c := range keys.Candidates() {
-		if pub, err := keys.PublicKey(c.Path); err == nil {
-			mine[normalizeKey(pub)] = true
+	if _, pub, ok, err := keys.EnvIdentity(); err != nil {
+		return "", err
+	} else if ok {
+		mine[normalizeKey(pub)] = true
+	} else {
+		for _, c := range keys.Candidates() {
+			if pub, err := keys.PublicKey(c.Path); err == nil {
+				mine[normalizeKey(pub)] = true
+			}
 		}
 	}
 	for _, n := range rs.Names() {
@@ -916,17 +947,23 @@ func cmdUnlock(args []string) error {
 	}
 
 	var paths []string
-	if *identity != "" {
-		paths = []string{*identity}
-	} else {
+	var ids []age.Identity
+	envID, envPub, fromEnv, err := keys.EnvIdentity()
+	switch {
+	case *identity != "":
+		paths, fromEnv = []string{*identity}, false
+	case err != nil:
+		return err
+	case fromEnv:
+		ids = []age.Identity{envID}
+	default:
 		for _, c := range keys.Candidates() {
 			paths = append(paths, c.Path)
 		}
 	}
-	if len(paths) == 0 {
+	if len(paths) == 0 && !fromEnv {
 		return errors.New("no key found on this machine.\n  Run `kis keygen`, send the printed public key to someone with access,\n  and run `kis unlock` again once they have added you")
 	}
-	var ids []age.Identity
 	for _, p := range paths {
 		id, err := keys.LoadIdentity(p, passphrasePrompt(p))
 		if err != nil {
@@ -945,6 +982,9 @@ func cmdUnlock(args []string) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kis: none of your keys has access to this repository yet.")
 		fmt.Fprintln(os.Stderr, "Send one of these public keys to someone with access and ask them to run `kis add YOUR_NAME KEY`:")
+		if fromEnv {
+			fmt.Fprintf(os.Stderr, "    %s  (from %s)\n", envPub, keys.EnvPrivateKey)
+		}
 		for _, p := range paths {
 			if pub, err := keys.PublicKey(p); err == nil {
 				fmt.Fprintf(os.Stderr, "    %s\n", pub)
@@ -985,10 +1025,14 @@ func cmdUnlock(args []string) error {
 	if err := r.Renormalize(staged); err != nil {
 		return err
 	}
+	who := name
+	if fromEnv {
+		who += " (key from " + keys.EnvPrivateKey + ")"
+	}
 	if len(r.Groups()) == 1 {
-		step("unlocked as %s; decrypted %d file(s)", name, n)
+		step("unlocked as %s; decrypted %d file(s)", who, n)
 	} else {
-		step("unlocked as %s (groups: %s); decrypted %d file(s)", name, strings.Join(groups, ", "), n)
+		step("unlocked as %s (groups: %s); decrypted %d file(s)", who, strings.Join(groups, ", "), n)
 	}
 	for _, g := range slices.Sorted(maps.Keys(locked)) {
 		verb := map[bool]string{true: "stays", false: "stay"}[len(locked[g]) == 1]

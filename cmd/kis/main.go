@@ -34,7 +34,7 @@ func init() {
 		{name: "init", usage: "init [--ssh] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
 		{name: "pubkey", usage: "pubkey", summary: "Print the public keys found on this machine", run: cmdPubkey},
-		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub] [--group G]", summary: "Give a partner access", run: cmdAdd},
+		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd},
 		{name: "remove", usage: "remove NAME [--group G] [--no-rotate]", summary: "Revoke access and rotate the affected keys", run: cmdRemove},
 		{name: "rotate", usage: "rotate [--group G]", summary: "Replace the key(s) and re-encrypt", run: cmdRotate},
 		{name: "unlock", usage: "unlock [--identity PATH]", summary: "Get access after cloning: decrypts the files", run: cmdUnlock},
@@ -56,7 +56,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "kis (keep-in-secret): commit secrets to git, encrypted.\n\nUsage:\n")
 	for _, c := range commands {
 		if !c.hidden {
-			fmt.Fprintf(os.Stderr, "  kis %-50s %s\n", c.usage, c.summary)
+			fmt.Fprintf(os.Stderr, "  kis %-58s %s\n", c.usage, c.summary)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "\nList the files to encrypt in .gitencrypt (same syntax as .gitignore).\n")

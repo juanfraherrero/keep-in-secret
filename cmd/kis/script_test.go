@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -330,6 +331,47 @@ var scriptCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 			}
 		}
 		ts.Fatalf("kis pubkey printed no key")
+	},
+
+	// readvar VAR FILE [REGEXP]: set $VAR to FILE's content, or to the first
+	// match of REGEXP in it (FILE may be stdout, e.g. a key kis printed once).
+	"readvar": func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) < 2 || len(args) > 3 {
+			ts.Fatalf("usage: readvar VAR FILE [REGEXP]")
+		}
+		v := ts.ReadFile(args[1])
+		if len(args) == 3 {
+			m := regexp.MustCompile(args[2]).FindString(v)
+			if m == "" {
+				ts.Fatalf("%s: no match for %s", args[1], args[2])
+			}
+			v = m
+		}
+		ts.Setenv(args[0], v)
+	},
+
+	// nowhere VAR DIR...: no file under any DIR contains $VAR's value, e.g. a
+	// private key that must never be written to disk.
+	"nowhere": func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) < 2 {
+			ts.Fatalf("usage: nowhere VAR DIR...")
+		}
+		secret := ts.Getenv(args[0])
+		if secret == "" {
+			ts.Fatalf("$%s is empty", args[0])
+		}
+		for _, dir := range args[1:] {
+			ts.Check(filepath.WalkDir(ts.MkAbs(dir), func(p string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() || !d.Type().IsRegular() {
+					return err
+				}
+				data, err := os.ReadFile(p)
+				if err == nil && strings.Contains(string(data), secret) {
+					ts.Fatalf("$%s is stored in %s", args[0], p)
+				}
+				return err
+			}))
+		}
 	},
 }
 
