@@ -40,6 +40,8 @@ Lines are commands; `!` in front expects failure (or negates an assertion);
 | `sshkey [-rsa] [-passphrase P] COMMENT PATH` | Write an OpenSSH key pair (no ssh-keygen needed) |
 | `binfile PATH` | Write a binary file with every byte value (NUL, CR, LF…), like a keystore |
 | `pubkey VAR` | Run `kis pubkey` and store the current person's first public key in `$VAR` |
+| `readvar VAR FILE [REGEXP]` | Set `$VAR` to FILE's content, or its first REGEXP match (`readvar KEY stdout 'AGE-SECRET-KEY-\S+'`) |
+| `nowhere VAR DIR...` | No file under DIR contains `$VAR` (a private key never written to disk) |
 
 Conditions: testscript's built-ins
 (`[unix]`, `[windows]`, `[darwin]`, `[exec:prog]`, …).

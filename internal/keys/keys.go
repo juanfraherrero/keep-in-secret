@@ -109,6 +109,61 @@ func Generate(path string) (string, error) {
 	return pub, nil
 }
 
+// EnvPrivateKey holds the text of a private key (age, or SSH without a
+// passphrase) for machines that receive secrets as environment variables:
+// CI runners and cloud agents. While it is set it is the only key kis uses.
+const EnvPrivateKey = "KIS_PRIVATE_KEY"
+
+// EnvIdentity parses KIS_PRIVATE_KEY; ok is false when it is unset.
+func EnvIdentity() (id age.Identity, pub string, ok bool, err error) {
+	v := strings.TrimSpace(os.Getenv(EnvPrivateKey))
+	if v == "" {
+		return nil, "", false, nil
+	}
+	id, pub, err = parsePrivateKey([]byte(v + "\n"))
+	if err != nil {
+		return nil, "", true, fmt.Errorf("%s: %w", EnvPrivateKey, err)
+	}
+	return id, pub, true, nil
+}
+
+func parsePrivateKey(data []byte) (age.Identity, string, error) {
+	if bytes.Contains(data, []byte("AGE-SECRET-KEY-")) {
+		ids, err := age.ParseIdentities(bytes.NewReader(data))
+		if err != nil {
+			return nil, "", err
+		}
+		x, ok := ids[0].(*age.X25519Identity)
+		if !ok {
+			return nil, "", errors.New("unsupported age identity")
+		}
+		return x, x.Recipient().String(), nil
+	}
+	signer, err := ssh.ParsePrivateKey(data)
+	if err != nil {
+		var missing *ssh.PassphraseMissingError
+		if errors.As(err, &missing) {
+			return nil, "", errors.New("passphrase-protected SSH keys can't be used here, nothing can type the passphrase; use an age key (kis add NAME --new-key) or an SSH key without a passphrase")
+		}
+		return nil, "", errors.New("not an age or SSH private key")
+	}
+	id, err := agessh.ParseIdentity(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return id, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+}
+
+// NewIdentity creates an age key pair in memory, for a partner whose private
+// key lives somewhere else (a CI secret) and never on this disk.
+func NewIdentity() (secret, pub string, err error) {
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		return "", "", err
+	}
+	return id.String(), id.Recipient().String(), nil
+}
+
 // PublicKey returns the public key (recipient string) for a private key file.
 func PublicKey(path string) (string, error) {
 	data, err := os.ReadFile(path)

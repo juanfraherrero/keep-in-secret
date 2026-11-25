@@ -177,11 +177,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }   # --since needs the base branch
-      - uses: actions/setup-go@v5
-        with: { go-version: stable }
-      - run: go install github.com/juanfraherrero/keep-in-secret/cmd/kis@latest
+      - run: curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
       - run: kis status --check --since origin/${{ github.base_ref }}
 ```
+
+That check needs no key. To let CI read the secrets, see
+[CI and cloud agents](#ci-and-cloud-agents).
 
 ## Other stacks (presets)
 
@@ -234,6 +235,42 @@ check) a file encrypted with the wrong group's key. A file belongs to one
 group; to share it with more people, add them to that group. Without any
 `@group`, kis never mentions groups.
 
+## CI and cloud agents
+
+A CI runner or a cloud agent (Codex, Claude Code on the web, Copilot coding
+agent…) starts from a fresh clone with no key, so its secret files stay
+ciphertext. Most jobs don't need more: building, testing code and
+`kis status --check` work locked. When a job needs the real values (a deploy,
+integration tests), make the machine a partner of its own:
+
+```sh
+kis add ci --new-key              # or: kis add deploy --new-key --group prod
+git commit -m "ci access" && git push
+```
+
+`--new-key` creates the key pair in memory and prints the private key once; it
+is saved nowhere. Store it as a `KIS_PRIVATE_KEY` secret on the platform, then
+unlock in the job or the agent's setup script:
+
+```yaml
+- run: curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
+- run: kis unlock
+  env:
+    KIS_PRIVATE_KEY: ${{ secrets.KIS_PRIVATE_KEY }}
+- run: npm run deploy             # .env is plaintext from here on
+```
+
+- kis reads the key from the variable, never from a file. It is only needed by
+  `kis unlock`; commits, pulls and checkouts after that use the repository key
+  git already has.
+- While `KIS_PRIVATE_KEY` is set, it is the only key kis uses, and `kis unlock`
+  says so (`unlocked as ci (key from KIS_PRIVATE_KEY)`). `--identity` still wins
+  over it. It also takes an SSH private key without a passphrase.
+- `kis rotate` and removing other partners don't affect it. `kis remove ci`
+  revokes it; `kis add ci --new-key --force` replaces a lost or leaked key.
+- Give each machine its own partner, in the narrowest group that works: a leak
+  then costs one `kis remove` instead of your own key.
+
 ## Coding agents
 
 Agents are trained to never commit `.env`, so left alone they may "fix" a kis
@@ -257,9 +294,10 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
+| `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, for `KIS_PRIVATE_KEY` |
 | `kis remove NAME [--group G] [--no-rotate]` | Revoke access and rotate the affected keys |
 | `kis rotate [--group G]` | New master key(s), re-encrypt those files |
-| `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook |
+| `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook. Uses `KIS_PRIVATE_KEY` when set |
 | `kis lock [--force]` | Forget the key here and turn files back into ciphertext |
 | `kis status [--check] [--json] [--since REV]` | State, partners, encrypted files, and whether it is safe to push |
 | `kis sync [--preset LIST]` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
@@ -273,6 +311,10 @@ and every error names the command that fixes it. A summary for LLMs lives at
   needed**. Passphrase-protected keys prompt once, at `kis unlock`. Keys that live only
   in 1Password, a YubiKey or the Secure Enclave can't be used (no file to read): use
   `kis keygen` instead.
+
+- **`KIS_PRIVATE_KEY`**: the text of an age key, or an SSH key without a
+  passphrase, in an environment variable. For CI and cloud agents; while it is
+  set, key files are ignored.
 
 Each partner can use either type; `default_key` in `.kis/config.toml` only decides
 what kis suggests to new partners.

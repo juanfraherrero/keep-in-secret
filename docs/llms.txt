@@ -29,6 +29,10 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
+- On CI or a cloud agent, `kis unlock` reads the private key from the
+  `KIS_PRIVATE_KEY` environment variable. If it is missing, ask the developer
+  to run `kis add NAME --new-key` and store the printed key as that secret;
+  never move secret values into the platform's own variables to bypass kis.
 - A line ending in `@GROUP` (e.g. `.env.production @prod`) encrypts those files
   for that group only. Files of a group this clone isn't in stay ciphertext:
   that is expected, commit around them; never try to decrypt or recreate them.
@@ -45,6 +49,8 @@ kis init -y --name NAME --preset terraform,android
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push
 kis unlock                           # partner, after cloning
+kis add ci --new-key [--group G]     # CI / cloud agent: store the printed key as KIS_PRIVATE_KEY
+KIS_PRIVATE_KEY=… kis unlock         # on that machine
 ```
 
 ## Stacks that don't use .env
@@ -65,10 +71,10 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 - `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
 - `kis status [--check] [--json] [--since REV]`: state and whether it is safe to push
 - `kis sync [--preset LIST]`: apply `.gitencrypt` edits and re-encrypt
-- `kis add NAME [KEY|github:USER|FILE.pub] [--group G]`: give a partner access, optionally to a group
+- `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
-- `kis unlock [--identity PATH]` / `kis lock [--force]`: decrypt / re-encrypt this clone
+- `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone
 - `kis keygen`, `kis pubkey`: personal key management
 
 ## Docs
