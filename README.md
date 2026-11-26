@@ -20,7 +20,8 @@ Terraform variables, Rails and Spring. Built to be driven by coding agents too:
 
 **Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
 **Vision:** [docs/vision.md](docs/vision.md) ·
-**Deep dive:** [docs/how-it-works.md](docs/how-it-works.md)
+**Deep dive:** [docs/how-it-works.md](docs/how-it-works.md) ·
+**Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ## Install
 
@@ -306,6 +307,23 @@ and every error names the command that fixes it. A summary for LLMs lives at
 - **`KIS_PRIVATE_KEY`**: the text of an age key, or an SSH key without a
   passphrase, in an environment variable. For CI and cloud agents; while it is
   set, key files are ignored.
+
+### Keys in other places: `--identity`
+
+kis looks for your private key in `$KIS_IDENTITY`, `~/.config/kis/identity`,
+`~/.ssh/id_ed25519` and `~/.ssh/id_rsa`, in that order. For a key anywhere else
+(`~/.ssh/id_ed25519_work`, one key per client…), pass it with `--identity PATH`.
+`PATH` is always your **private** key file, also at `kis init` (kis derives the
+public key from it; a `.pub` file is rejected).
+
+kis does not remember that path ([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)):
+
+- Pass it again on every `kis unlock`: `kis unlock --identity PATH`. That uses
+  only that file, even over `KIS_PRIVATE_KEY`.
+- Or set `KIS_IDENTITY=PATH` in your shell profile. kis then tries that file
+  first, on every command. It is also the only way to create a group
+  (`kis sync` with a new `@group`, `kis add NAME --group NEW`), since those
+  commands have no `--identity` flag.
 
 Each partner can use either type; `default_key` in `.kis/config.toml` only decides
 what kis suggests to new partners.

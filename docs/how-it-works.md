@@ -222,6 +222,9 @@ Each person brings one private key:
 | SSH ed25519 / RSA | `~/.ssh/id_ed25519`, `~/.ssh/id_rsa` | Read directly; no ssh-agent. Passphrases are prompted for at unlock |
 
 Lookup order: `$KIS_IDENTITY`, the kis age identity, `id_ed25519`, then `id_rsa`.
+`--identity PATH` (on `init` and `unlock`) skips the lookup and uses only that
+private key file. The path is not stored anywhere; only the public key is
+([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)).
 ECDSA and `sk-` (security key) keys are rejected, because age can't encrypt to them.
 
 ### Wrapping

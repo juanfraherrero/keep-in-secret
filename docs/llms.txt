@@ -29,6 +29,13 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
+- If the developer's private key is not in a standard place (`$KIS_IDENTITY`,
+  `~/.config/kis/identity`, `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`), run
+  `kis unlock --identity PATH`, where PATH is their **private** key file (ask
+  them for the path; never guess or search for keys). kis does not remember
+  it: pass it on every `kis unlock`, or have the developer set
+  `KIS_IDENTITY=PATH`, which creating a group (`@GROUP`) also needs.
+  `kis init --identity PATH` takes the same private key file, not a `.pub`.
 - On CI or a cloud agent, `kis unlock` reads the private key from the
   `KIS_PRIVATE_KEY` environment variable. If it is missing, ask the developer
   to run `kis add NAME --new-key` and store the printed key as that secret;
