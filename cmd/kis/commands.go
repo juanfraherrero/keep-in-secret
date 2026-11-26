@@ -1192,7 +1192,7 @@ func collectStatus(since string) (statusJSON, error) {
 	}
 	if st.Git != nil && !st.Git.Supported {
 		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
-			Message: fmt.Sprintf("git %s is too old: kis needs %d.%d+", st.Git.Version, gitx.MinVersion[0], gitx.MinVersion[1]), Fix: "upgrade git (run `kis unlock` for the steps on this OS)"})
+			Message: fmt.Sprintf("git %s is too old: kis needs %d.%d+", st.Git.Version, gitx.MinVersion[0], gitx.MinVersion[1]), Fix: fmt.Sprintf("upgrade git to %d.%d or newer", gitx.MinVersion[0], gitx.MinVersion[1])})
 	}
 	st.SafeToPush = repo.Audit{Problems: st.Problems}.Safe()
 	if st.Problems == nil {
@@ -1227,7 +1227,7 @@ func printStatus(st statusJSON) {
 	if st.Git != nil {
 		note := "ok"
 		if !st.Git.Supported {
-			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+ (run `kis unlock` for upgrade steps)", gitx.MinVersion[0], gitx.MinVersion[1])
+			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+, upgrade git", gitx.MinVersion[0], gitx.MinVersion[1])
 		}
 		fmt.Printf("git             %s %s\n", st.Git.Version, note)
 	}

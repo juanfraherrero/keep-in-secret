@@ -37,10 +37,24 @@ func TestSupported(t *testing.T) {
 	}
 }
 
-func TestUpgradeHint(t *testing.T) {
-	for goos, want := range map[string]string{"darwin": "brew install git", "windows": "winget", "linux": "ppa:git-core/ppa"} {
-		if h := UpgradeHint(goos); !strings.Contains(h, want) {
-			t.Errorf("%s: hint %q missing %q", goos, h, want)
+func TestVersionError(t *testing.T) {
+	if err := VersionError([3]int{2, 28, 0}); err != nil {
+		t.Errorf("2.28.0: unexpected error %v", err)
+	}
+	err := VersionError([3]int{2, 25, 1})
+	if err == nil {
+		t.Fatal("2.25.1: expected an error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"2.28", "found 2.25.1", "Upgrade git"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q missing %q", msg, want)
+		}
+	}
+	// No command that may not work on this machine (see CLAUDE.md).
+	for _, cmd := range []string{"brew", "winget", "apt", "dnf", "apk", "sudo"} {
+		if strings.Contains(msg, cmd) {
+			t.Errorf("message %q suggests %q", msg, cmd)
 		}
 	}
 }

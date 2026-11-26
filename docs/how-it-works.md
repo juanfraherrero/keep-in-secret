@@ -5,7 +5,7 @@ This page covers how kis is built. For everyday use, see the [README](../README.
 > **Requirement: git 2.28 or newer.** Older git resolves negated `.gitattributes`
 > patterns differently (found by the differential test in §6), which could encrypt
 > the wrong set of files. `kis init` and `kis unlock` check `git version` and refuse,
-> printing the upgrade command for the current OS; `kis status` shows the version.
+> saying git must be upgraded (no command: how depends on the machine); `kis status` shows the version.
 
 kis does two jobs:
 

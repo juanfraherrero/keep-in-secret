@@ -27,8 +27,9 @@ Terraform variables, Rails and Spring. Built to be driven by coding agents too:
 > [!IMPORTANT]
 > **kis requires git 2.28 or newer.** Check with `git --version`. Older git
 > resolves `!` patterns in `.gitattributes` differently, which could encrypt the
-> wrong files, so `kis init` and `kis unlock` refuse to run on it and print the
-> upgrade command for your OS.
+> wrong files, so `kis init` and `kis unlock` refuse to run on it and tell you to
+> upgrade git. How to upgrade depends on your machine; see
+> [git-scm.com/downloads](https://git-scm.com/downloads).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
@@ -50,17 +51,6 @@ Everyone who works on the repository installs `kis` once, like `git-lfs`.
 | git | **2.28** | Tested in CI on 2.28, 2.30, 2.34, 2.39, 2.43, 2.45, 2.52 and 2.55 |
 | Go | 1.27 | Only to build from source; release binaries need nothing |
 | OS | macOS, Linux, Windows | All three run the full test suite in CI |
-
-### Upgrading git
-
-| OS | Command |
-|---|---|
-| macOS | `brew install git`, then open a new terminal |
-| Windows | `winget install --id Git.Git -e` or [git-scm.com](https://git-scm.com/download/win) |
-| Ubuntu | `sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git` |
-| Debian | `sudo apt install git` (Debian 11 and newer ship a supported git) |
-| Fedora / RHEL | `sudo dnf install git` |
-| Alpine | `apk add git` |
 
 `kis status` shows the git version it found and flags it if it's too old.
 
