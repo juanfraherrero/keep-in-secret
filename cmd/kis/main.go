@@ -31,7 +31,7 @@ var commands []command
 
 func init() {
 	commands = []command{
-		{name: "init", usage: "init [--ssh] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
+		{name: "init", usage: "init [--identity PATH] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
 		{name: "pubkey", usage: "pubkey", summary: "Print the public keys found on this machine", run: cmdPubkey},
 		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd},

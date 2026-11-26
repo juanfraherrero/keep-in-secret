@@ -40,7 +40,6 @@ func openInitialized() (*repo.Repo, error) {
 
 func cmdInit(args []string) error {
 	fs := newFlags("init")
-	useSSH := fs.Bool("ssh", false, "use your SSH key (~/.ssh/id_ed25519) and make SSH the default for partners")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	name := fs.String("name", "", "your name in the recipients list")
 	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
@@ -72,7 +71,7 @@ func cmdInit(args []string) error {
 	}
 
 	fmt.Println("Setting up kis encryption in", r.Root)
-	keyPath, pub, keyType, err := chooseIdentity(*useSSH, *identity)
+	keyPath, pub, keyType, err := chooseIdentity(*identity)
 	if err != nil {
 		return identityError(err, keyPath)
 	}
@@ -290,26 +289,12 @@ func ensureGroups(r *repo.Repo) error {
 	return nil
 }
 
-func chooseIdentity(useSSH bool, explicit string) (path, pub, keyType string, err error) {
+func chooseIdentity(explicit string) (path, pub, keyType string, err error) {
 	if explicit != "" {
 		pub, err = keys.PublicKey(explicit)
 		return explicit, pub, keys.RecipientType(pub), err
 	}
 	cands := keys.Candidates()
-	if useSSH {
-		for _, c := range cands {
-			if c.Type == keys.TypeSSH {
-				pub, err = keys.PublicKey(c.Path)
-				if err == nil {
-					if _, perr := keys.ParseRecipient(pub); perr != nil {
-						err = perr
-					}
-				}
-				return c.Path, pub, keys.TypeSSH, err
-			}
-		}
-		return "", "", "", errors.New("no SSH key found in ~/.ssh: create one with `ssh-keygen -t ed25519`, or run `kis init` without --ssh")
-	}
 
 	options := make([]string, 0, len(cands)+1)
 	def := len(cands) // "create new" unless an age key exists

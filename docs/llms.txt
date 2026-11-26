@@ -75,7 +75,7 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 
 ## Commands
 
-- `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
+- `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
 - `kis status [--check] [--json] [--since REV]`: state and whether it is safe to push
 - `kis sync [--preset LIST]`: apply `.gitencrypt` edits and re-encrypt
 - `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent

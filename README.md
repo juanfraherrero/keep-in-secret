@@ -101,7 +101,7 @@ and `kis unlock` wires it into their clone.
 ```sh
 cd my-repo
 kis init          # age key (created for you, or reuse an existing one)
-kis init --ssh    # or: use ~/.ssh/id_ed25519 and make SSH the default for partners
+kis init --identity ~/.ssh/id_ed25519   # or: use your SSH key; partners are then told to send theirs
 git commit -m "Set up kis encryption" && git push
 ```
 
@@ -282,7 +282,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 
 | Command | What it does |
 |---|---|
-| `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
+| `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |

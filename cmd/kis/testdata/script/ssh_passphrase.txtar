@@ -7,7 +7,7 @@ sshkey -passphrase 'open sesame' owner@laptop $HOME/.ssh/id_ed25519
 cd app
 exec git init -q
 # init only needs the public half: no prompt.
-exec kis init --ssh -y --name owner
+exec kis init --identity $HOME/.ssh/id_ed25519 -y --name owner
 ! stderr 'Passphrase'
 exec git add .
 exec git commit -qm init
