@@ -19,6 +19,7 @@ Terraform variables, Rails and Spring. Built to be driven by coding agents too:
 [see below](#coding-agents).
 
 **Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
+**Vision:** [docs/vision.md](docs/vision.md) ·
 **Deep dive:** [docs/how-it-works.md](docs/how-it-works.md)
 
 ## Install
