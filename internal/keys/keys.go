@@ -164,6 +164,21 @@ func NewIdentity() (secret, pub string, err error) {
 	return id.String(), id.Recipient().String(), nil
 }
 
+// ErrUnreadableKey is a key file that exists but is neither an age nor an SSH
+// private key kis can read: usually corrupted, truncated or another format.
+var ErrUnreadableKey = errors.New("it can't be opened as an age or SSH private key: check that the file isn't corrupted")
+
+// unreadable explains why the file at path can't be used as a private key.
+func unreadable(path string, data []byte) error {
+	for _, l := range splitLines(string(data)) {
+		if _, err := ParseRecipient(l); err == nil {
+			return fmt.Errorf("%s is a public key; pass the private key file instead", path)
+		}
+		break
+	}
+	return fmt.Errorf("found a key file at %s, but %w", path, ErrUnreadableKey)
+}
+
 // PublicKey returns the public key (recipient string) for a private key file.
 func PublicKey(path string) (string, error) {
 	data, err := os.ReadFile(path)
@@ -173,7 +188,7 @@ func PublicKey(path string) (string, error) {
 	if bytes.Contains(data, []byte("AGE-SECRET-KEY-")) {
 		ids, err := age.ParseIdentities(bytes.NewReader(data))
 		if err != nil {
-			return "", err
+			return "", unreadable(path, data)
 		}
 		if x, ok := ids[0].(*age.X25519Identity); ok {
 			return x.Recipient().String(), nil
@@ -189,7 +204,7 @@ func PublicKey(path string) (string, error) {
 		if errors.As(err, &missing) && missing.PublicKey != nil {
 			return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(missing.PublicKey))), nil
 		}
-		return "", fmt.Errorf("%s: %w", path, err)
+		return "", unreadable(path, data)
 	}
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
 }
@@ -204,7 +219,7 @@ func LoadIdentity(path string, passphrase func() ([]byte, error)) (age.Identity,
 	if bytes.Contains(data, []byte("AGE-SECRET-KEY-")) {
 		ids, err := age.ParseIdentities(bytes.NewReader(data))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			return nil, unreadable(path, data)
 		}
 		return ids[0], nil
 	}
@@ -214,6 +229,10 @@ func LoadIdentity(path string, passphrase func() ([]byte, error)) (age.Identity,
 	}
 	var missing *ssh.PassphraseMissingError
 	if !errors.As(err, &missing) {
+		// A valid SSH key of a type age can't use (ECDSA…) keeps its own error.
+		if _, perr := ssh.ParsePrivateKey(data); perr != nil && !errors.As(perr, &missing) {
+			return nil, unreadable(path, data)
+		}
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	pub := missing.PublicKey

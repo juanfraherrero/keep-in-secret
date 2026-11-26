@@ -27,6 +27,9 @@ func openInitialized() (*repo.Repo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Broken() {
+		return nil, repo.ErrBroken
+	}
 	if !r.Initialized() {
 		return nil, repo.ErrNotInitialized
 	}
@@ -61,11 +64,17 @@ func cmdInit(args []string) error {
 	if r.Initialized() {
 		return errors.New("kis is already set up here (.kis/ exists).\n  Need access?        kis unlock\n  Add a partner:      kis add NAME KEY")
 	}
+	// A .kis/ without config.toml was set up before and lost a file. A new
+	// init would replace the master key, rewrite recipients.toml with only
+	// you, and leave the other partners' .age files holding the old key.
+	if r.Broken() {
+		return repo.ErrBroken
+	}
 
 	fmt.Println("Setting up kis encryption in", r.Root)
 	keyPath, pub, keyType, err := chooseIdentity(*useSSH, *identity)
 	if err != nil {
-		return err
+		return identityError(err, keyPath)
 	}
 	me := *name
 	if me == "" {
@@ -159,6 +168,20 @@ func cmdInit(args []string) error {
 	fmt.Println("  3. Give them access:  kis add NAME KEY   (then commit and push)")
 	fmt.Println("  4. They clone and run: kis unlock")
 	return nil
+}
+
+// identityError adds what to do when your own key file can't be opened.
+// Only kis's personal key file can be replaced by kis itself.
+func identityError(err error, path string) error {
+	if !errors.Is(err, keys.ErrUnreadableKey) {
+		return err
+	}
+	if path == keys.DefaultAgeIdentityPath() {
+		return fmt.Errorf("%w\n  Restore it from a backup if you have one, or replace it with a new key:\n"+
+			"    kis keygen --force   (keeps the old file as identity.bak)\n"+
+			"  Repositories you were already in then need a partner to run kis add YOUR_NAME NEW_KEY --force; their files are not re-encrypted", err)
+	}
+	return fmt.Errorf("%w\n  Restore it from a backup if you have one, or pick another key with --identity PATH", err)
 }
 
 func presetNames() string {
@@ -1086,6 +1109,13 @@ func cmdStatus(args []string) error {
 	if err != nil {
 		if *asJSON && errors.Is(err, repo.ErrNotInitialized) {
 			printJSON(statusJSON{Version: version, Scope: statusScope, Encrypted: []string{}, Files: []repo.FileStatus{}, Problems: []repo.Problem{}})
+			return exitError{}
+		}
+		if *asJSON && errors.Is(err, repo.ErrBroken) {
+			printJSON(statusJSON{Version: version, Scope: statusScope, Encrypted: []string{}, Files: []repo.FileStatus{},
+				Problems: []repo.Problem{{Severity: repo.SeverityError, Path: ".kis/config.toml",
+					Message: "kis was set up here, but this file is missing; don't run kis init again, it would drop the partners",
+					Fix:     "restore .kis/config.toml from git history"}}})
 			return exitError{}
 		}
 		return err
