@@ -242,7 +242,9 @@ partner's public key(s), ASCII-armored, and committed:
 ```
 
 `kis add ana github:ana` fetches `https://github.com/ana.keys` and keeps only the
-ed25519 and RSA keys.
+ed25519 and RSA keys. All of them become ana's recipients, so any one unlocks
+(one age stanza per key in `ana.age`). The download is capped at 1 MiB and
+happens only at `kis add`; later changes on GitHub are not picked up.
 
 **Groups.** Each group's master key is wrapped the same way, under its own
 folder; membership is just which files exist:

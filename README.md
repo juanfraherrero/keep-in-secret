@@ -308,6 +308,24 @@ and every error names the command that fixes it. A summary for LLMs lives at
   passphrase, in an environment variable. For CI and cloud agents; while it is
   set, key files are ignored.
 
+### `github:USER`: every key on the account
+
+`kis add ana github:ana` downloads `https://github.com/ana.keys`, the public SSH
+keys GitHub publishes for every account, and gives access to **all** the
+ed25519 and RSA keys there. That is what makes it seamless: Ana can unlock from
+any machine she pushes code from. The trade-offs:
+
+- Access is only as safe as the **least protected** of those keys (an old
+  laptop, a key copied to a server).
+- kis reads them **once**. Removing a key on GitHub doesn't revoke it here:
+  run `kis add ana github:ana --force` to pick up her current keys, then
+  `kis rotate`, because the removed key could already open the repository key.
+- GitHub doesn't publish key titles, so `recipients.toml` can't tell which key
+  belongs to which machine.
+
+When kis gets more than one key it says so. For narrow access, ask the person
+for one public key and use that instead: `kis add ana KEY --force`.
+
 ### Keys in other places: `--identity`
 
 kis looks for your private key in `$KIS_IDENTITY`, `~/.config/kis/identity`,

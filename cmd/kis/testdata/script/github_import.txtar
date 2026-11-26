@@ -12,6 +12,8 @@ exec git init -q
 exec kis init -y --name owner
 exec kis add ana github:ana
 stdout '✓ added ana \(2 key\(s\), ssh\)'
+stdout 'github:ana \(2 keys\): every one of these keys can unlock'
+stdout 'To allow a single key, ask ana for it and run: kis add ana KEY --force'
 grep 'ana@laptop' .kis/recipients.toml
 grep 'ana@desktop' .kis/recipients.toml
 ! grep 'ecdsa' .kis/recipients.toml

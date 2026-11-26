@@ -645,10 +645,14 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 	case exists && !force:
 		return fmt.Errorf("%s already has access; use --force to replace their keys, or omit the key to add them to a group: kis add %s --group GROUP", name, name)
 	}
+	var fromGitHub []string // github:USER arguments that returned several keys
 	for _, a := range keyArgs {
 		p, err := keys.ResolveRecipients(a)
 		if err != nil {
 			return err
+		}
+		if strings.HasPrefix(a, "github:") && len(p) > 1 {
+			fromGitHub = append(fromGitHub, fmt.Sprintf("%s (%d keys)", a, len(p)))
 		}
 		pubs = append(pubs, p...)
 	}
@@ -695,6 +699,12 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 		in = " to " + strings.Join(groups, ", ")
 	}
 	step("added %s%s (%d key(s), %s)", name, in, len(pubs), keys.RecipientType(pubs[0]))
+	// Every key on a GitHub account can unlock: access is only as safe as the
+	// least protected of them, and removing one on GitHub doesn't revoke it.
+	if len(fromGitHub) > 0 {
+		note("%s: every one of these keys can unlock. To allow a single key, ask %s for it and run: kis add %s KEY --force",
+			strings.Join(fromGitHub, ", "), name, name)
+	}
 	return nil
 }
 
