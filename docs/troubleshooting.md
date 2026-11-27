@@ -54,11 +54,42 @@ other partners, each one runs `kis unlock` after pulling.
 
 ### `unsupported key type "ecdsa-…"` or `"sk-…"`
 
-**Cause:** age, which kis uses to share the repository key, can only encrypt
-to ed25519 and RSA SSH keys.
+**Cause:** kis shares the repository key with age, which can only encrypt to
+three kinds of keys: age (`age1…`), SSH ed25519 (`ssh-ed25519`) and SSH RSA
+(`ssh-rsa`). ECDSA, security keys (`sk-…`) and DSA are refused. Nothing is
+written when this happens.
 
 **What to do:** use an ed25519 or RSA SSH key, or a kis key from
 `kis keygen`.
+
+### `".env.prod @bad group" looks like a group, but group names are one word`
+
+**Cause:** a `.gitencrypt` line ends in `@` followed by words with spaces. A
+group goes last, as one word: `PATTERN @GROUP`. Otherwise kis would read the
+whole line as a file name, and the file wouldn't be in the group you meant.
+
+**What to do:** fix the line (for example `.env.prod @prod`), then run
+`kis sync`. A file belongs to one group; to share it with more people, add
+them to that group.
+
+### `kis init` stopped with an error, and running it again says "already set up"
+
+**Cause:** `kis init` writes `.kis/` early, then wires git, syncs the files
+and writes the `AGENTS.md` section. If a later step fails (for example
+`creating group G: none of this machine's keys belongs to a partner`), the
+steps before it are kept, so a second `kis init` sees a repository that is
+already set up.
+
+**What to do:** fix the cause in the error first. Then:
+
+- **If you haven't committed the setup yet:** delete the `.kis/` folder and run
+  `kis init` again. This is the complete fix: you get a new repository key and
+  the `AGENTS.md` section.
+- **If you already committed or pushed it** (partners may have the key): run
+  `kis sync` instead. It finishes the files, `.gitattributes` and staging. It
+  does **not** create the `AGENTS.md` section, because `kis sync` only
+  refreshes a section that exists, so coding agents won't get the kis rules
+  until you add it.
 
 ## Keys
 

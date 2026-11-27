@@ -64,11 +64,22 @@ func TestGroups(t *testing.T) {
 	}
 }
 
+// Patterns with spaces or an "@" that isn't a group are still fine.
+func TestParseNoFalseGroup(t *testing.T) {
+	for _, in := range []string{"my file.env\n", "user@host.env\n", "a b@c.env\n", ".env.prod @prod\n"} {
+		if _, errs := Parse(in); len(errs) > 0 {
+			t.Errorf("Parse(%q) errs = %v, want none", in, errs)
+		}
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	for in, want := range map[string]string{
-		".env.prod @prod @ops\n": "one group",
-		"!.env.example @prod\n":  "takes no group",
-		".env.prod @pr/od\n":     "invalid group",
+		".env.prod @prod @ops\n":  "one group",
+		"!.env.example @prod\n":   "takes no group",
+		".env.prod @pr/od\n":      "invalid group",
+		".env.prod @bad group\n":  "looks like a group",
+		".env.prod @bad\tgroup\n": "looks like a group",
 	} {
 		_, errs := Parse(in)
 		if len(errs) != 1 || !strings.Contains(errs[0].Error(), want) {
