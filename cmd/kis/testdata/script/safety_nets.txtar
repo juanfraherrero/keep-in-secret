@@ -20,17 +20,17 @@ stored HEAD config/secrets.json
 
 # Without the filter configured, plaintext gets staged and the hook blocks it.
 exec git config --remove-section filter.kis
-cp $WORK/local .env.local
-exec git add .env.local
-! stored : .env.local
+cp $WORK/local .env.staging
+exec git add .env.staging
+! stored : .env.staging
 ! exec git commit -qm leak
 stderr 'commit blocked, these files would be stored in PLAINTEXT'
-stderr '    .env.local'
+stderr '    .env.staging'
 exec kis unlock
-stdout '✓ re-encrypted staged \.env\.local'
-stored : .env.local
-exec git commit -qm 'local env'
-stored HEAD .env.local
+stdout '✓ re-encrypted staged \.env\.staging'
+stored : .env.staging
+exec git commit -qm 'staging env'
+stored HEAD .env.staging
 
 # A locked repo refuses to encrypt new plaintext rather than leak it.
 exec kis lock
@@ -40,7 +40,7 @@ stderr 'refusing to store .env.prod in plaintext: repository is locked'
 
 exec kis status
 stdout 'state +LOCKED'
-stdout '\.env\.local +encrypted in git'
+stdout '\.env\.staging +encrypted in git'
 stdout 'config/secrets.json +encrypted in git'
 -- app/.env --
 A=1

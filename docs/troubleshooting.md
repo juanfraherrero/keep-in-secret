@@ -316,6 +316,32 @@ access to make the change, or to add you (`kis add YOUR_NAME KEY`).
 **What to do:** run `kis sync` (or `kis unlock` first if this clone is
 locked), then commit again.
 
+### `commit blocked, these local files would be committed in PLAINTEXT`
+
+Also in `kis status`: `FILE: a local file (.env*.local) staged in plaintext`,
+`… the last commit stores in plaintext`, or with `--since`,
+`a commit to be pushed stores this local file (.env*.local) in plaintext`.
+
+**Cause:** FILE is a local file (`.env.local`, `.env.development.local`, any
+`.env*.local`): one developer's values. The default `.gitencrypt` excludes
+local files (`!.env*.local`), so kis doesn't encrypt them, and this project
+doesn't gitignore FILE, so `git add .` staged it in plaintext. It also happens
+when FILE was committed before kis, or when `!.env*.local` was added to a
+`.gitencrypt` that used to encrypt it (`kis sync` then stages it in plaintext
+and warns `local files tracked in PLAINTEXT`).
+
+**What to do:** pick one.
+
+- Keep it on this machine (the usual case): add it to `.gitignore` (for
+  example the line `.env*.local`), run `git rm --cached -- FILE` (the file stays
+  on disk), and commit.
+- Share it with the team, encrypted: delete the `!.env*.local` line from
+  `.gitencrypt`, run `kis sync`, and commit.
+
+If the last commit, or a commit you already pushed, holds FILE in plaintext,
+its values are in the history: rotate any token it holds. A commit not pushed
+yet can be rewritten instead (`git commit --amend`, `git rebase -i`).
+
 ### `.gitencrypt changed but .gitattributes was not updated`
 
 **Cause:** `.gitencrypt` was edited without regenerating `.gitattributes`, so

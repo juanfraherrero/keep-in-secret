@@ -22,6 +22,7 @@ func TestBlockAndLLMsTxtAgree(t *testing.T) {
 			"copy secret values into code, logs, commit messages,",
 			"If a task seems to need one, refer to the variable by name, or ask the developer.",
 			"`kis status --check --since origin/main`",
+			"`.env*.local` files are local: never commit them; don't remove them from `.gitignore`.",
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s lacks %q", name, want)

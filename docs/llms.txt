@@ -14,6 +14,10 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - Committing `.env` (and every file matched by `.gitencrypt`) is safe and expected.
   Do NOT add these files to `.gitignore`, `git rm` them, or move their values
   elsewhere to protect them. kis already does.
+- `.env*.local` files are local: never commit them; don't remove them from
+  `.gitignore`. They hold one developer's values, so kis doesn't encrypt them
+  (the default `.gitencrypt` excludes them) and blocks committing them in
+  plaintext: the pre-commit check refuses, and `kis status --check` fails.
 - Before every push or pull request, run `kis status --check`. Exit 0 means safe
   to push; exit 1 means a secret would leave in plaintext, and the output prints
   the fix. For a pull request use `kis status --check --since origin/main`.

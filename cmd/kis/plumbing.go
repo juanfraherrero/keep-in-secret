@@ -119,6 +119,21 @@ func cmdPrecommit([]string) error {
 		fmt.Fprintln(os.Stderr, "     Run `kis sync` to encrypt them (or `kis unlock` first if this clone is locked).")
 		return exitError{}
 	}
+	// Local files are excluded from .gitencrypt, so the check above can't
+	// see them; without this, a project that doesn't gitignore them would
+	// commit one developer's tokens in plaintext.
+	local, err := r.StagedLocalPlaintext()
+	if err != nil {
+		return err
+	}
+	if len(local) > 0 {
+		fmt.Fprintf(os.Stderr, "kis: commit blocked, these local files would be committed in PLAINTEXT:\n    %s\n"+
+			"     They match %s: kis doesn't encrypt them and they aren't gitignored.\n"+
+			"     To keep them on this machine, gitignore them and run `%s`.\n"+
+			"     To share them encrypted, remove \"!%s\" from .gitencrypt and run `kis sync`.\n",
+			strings.Join(local, "\n    "), gitencrypt.LocalPattern, repo.UntrackCommand(local), gitencrypt.LocalPattern)
+		return exitError{}
+	}
 	return nil
 }
 
