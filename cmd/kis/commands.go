@@ -535,6 +535,9 @@ func cmdAdd(args []string) error {
 	}
 	var secret string
 	if *newKey {
+		// stdout carries only the private key, so it can be piped straight
+		// into a secret store; every message goes to stderr.
+		msgOut = os.Stderr
 		if len(pos) > 1 {
 			return errors.New("--new-key creates the key, so don't pass one")
 		}
@@ -559,10 +562,13 @@ func cmdAdd(args []string) error {
 		fmt.Printf("\nNow commit and push, then ask %s to run:  kis unlock\n", pos[0])
 		return nil
 	}
-	fmt.Printf("\nPrivate key of %s (shown once, saved nowhere):\n\n    %s\n\n", pos[0], secret)
-	fmt.Printf("Store it as the %s secret of the CI or cloud agent that acts as %s;\n", keys.EnvPrivateKey, pos[0])
-	fmt.Println("there, `kis unlock` reads it from the environment.")
-	fmt.Println("Now commit and push. Lost the key? kis add " + pos[0] + " --new-key --force")
+	// Both streams are unbuffered, so at a terminal this reads as one block;
+	// piped, stdout is exactly one line: the key.
+	fmt.Fprintf(os.Stderr, "\nPrivate key of %s (shown once, saved nowhere):\n\n    ", pos[0])
+	fmt.Println(secret)
+	fmt.Fprintf(os.Stderr, "\nThe private key is on stdout: pipe it straight into your CI or agent platform's secret store as %s; never into logs, files or chat.\n", keys.EnvPrivateKey)
+	fmt.Fprintf(os.Stderr, "On the CI or cloud agent that acts as %s, `kis unlock` reads it from the environment.\n", pos[0])
+	fmt.Fprintln(os.Stderr, "Now commit and push. Lost the key? kis add "+pos[0]+" --new-key --force")
 	return nil
 }
 

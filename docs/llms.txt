@@ -49,6 +49,11 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
   agents: one `kis add agent-N --new-key` per agent, each key in that agent's
   own secret, so one can be revoked alone. Never print those keys into logs,
   commits or chat.
+- `kis add NAME --new-key` writes only the private key, on one line, to stdout;
+  every message goes to stderr. Run it yourself only piped straight into the
+  platform's secret store (as `KIS_PRIVATE_KEY`), so you never read the key;
+  the command for that depends on the platform. If you can't pipe it there,
+  ask the developer to run it.
 - `kis init` with `KIS_PRIVATE_KEY` set uses that key as the first partner
   and writes no key file. Without a terminal it warns when its key is the only
   partner: tell the developer, and add them (`kis add NAME KEY`) before
@@ -71,7 +76,7 @@ kis init -y --name NAME              # creates .gitencrypt, key, AGENTS.md secti
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push
 kis unlock                           # partner, after cloning
-kis add ci --new-key [--group G]     # CI / cloud agent: store the printed key as KIS_PRIVATE_KEY
+kis add ci --new-key [--group G]     # CI / cloud agent: stdout is the key; pipe it into the secret KIS_PRIVATE_KEY
 KIS_PRIVATE_KEY=… kis unlock         # on that machine
 ```
 
