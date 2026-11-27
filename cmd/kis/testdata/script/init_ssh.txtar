@@ -6,8 +6,7 @@ cd app
 exec git init -q
 exec kis init --identity $HOME/.ssh/id_ed25519 -y --name owner
 stdout 'encrypted for owner \(ssh key .*\.ssh[/\\]id_ed25519\)'
-stdout 'This repo uses SSH keys'
-stdout 'kis add NAME github:THEIR_USER'
+stdout 'key formats: kis add -h'
 ! exists $KIS_KEY
 grep 'default_key = "ssh"' .kis/config.toml
 grep '^owner = \["ssh-ed25519 AAAA[^"]+ owner@laptop"\]$' .kis/recipients.toml

@@ -142,7 +142,6 @@ func cmdInit(args []string) error {
 		warn("they are encrypted from now on, but old commits still contain them: rotate those secrets")
 	}
 
-	cfg := repo.Config{DefaultKey: keyType}
 	if interactive() && confirm("Add partners now?", false) {
 		for {
 			pname := ask("Partner name (empty to finish)", "")
@@ -161,11 +160,10 @@ func cmdInit(args []string) error {
 	}
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Commit and push:   git commit -m \"Set up kis encryption\" && git push")
-	fmt.Println("  2. Ask each partner to install kis and send you their public key:")
-	printPartnerKeyInstructions(cfg)
-	fmt.Println("  3. Give them access:  kis add NAME KEY   (then commit and push)")
-	fmt.Println("  4. They clone and run: kis unlock")
+	fmt.Println("  1. Check what is encrypted:   kis status")
+	fmt.Println("  2. Commit the setup and push it.")
+	fmt.Println("  3. Give partners access:      kis add NAME KEY   (key formats: kis add -h)")
+	fmt.Println("  4. Partners clone and run:    kis unlock")
 	return nil
 }
 
@@ -343,18 +341,6 @@ func defaultName(r *repo.Repo) string {
 
 func sanitizeName(s string) string {
 	return regexp.MustCompile(`[^A-Za-z0-9._-]+`).ReplaceAllString(strings.ToLower(s), "-")
-}
-
-func printPartnerKeyInstructions(cfg repo.Config) {
-	if cfg.DefaultKey == keys.TypeSSH {
-		fmt.Println("       This repo uses SSH keys. They send you ~/.ssh/id_ed25519.pub")
-		fmt.Printf("       (Windows: %s), or you run: kis add NAME github:THEIR_USER\n", `%USERPROFILE%\.ssh\id_ed25519.pub`)
-		fmt.Println("       No SSH key yet? `ssh-keygen -t ed25519`, or `kis keygen` for a kis key.")
-		return
-	}
-	fmt.Println("       They run `kis keygen` and send you the age1… line it prints.")
-	fmt.Println("       (Key is stored in ~/.config/kis/identity on macOS/Linux, %APPDATA%\\kis\\identity on Windows.)")
-	fmt.Println("       Already have an SSH key? `kis add NAME github:THEIR_USER` works too.")
 }
 
 // wireGit installs the filter config and pre-commit hook on this machine.

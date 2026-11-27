@@ -23,6 +23,7 @@ func init() {
 
 type command struct {
 	name, usage, summary string
+	help                 string // extra explanation shown by `kis NAME -h`
 	run                  func(args []string) error
 	hidden               bool
 }
@@ -34,7 +35,14 @@ func init() {
 		{name: "init", usage: "init [--identity PATH] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
 		{name: "pubkey", usage: "pubkey", summary: "Print the public keys found on this machine", run: cmdPubkey},
-		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd},
+		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd,
+			help: "KEY is the partner's public key, in any of these forms:\n" +
+				"  age1…              an age key; they create one with `kis keygen`\n" +
+				"  \"ssh-ed25519 …\"    an SSH public key (ed25519 or RSA), quoted\n" +
+				"  github:USER        every ed25519/RSA key on that GitHub account\n" +
+				"  FILE.pub           a file with one or more public keys\n" +
+				"Several KEYs can be given. Without KEY, NAME must already be a partner (use with --group).\n" +
+				"--new-key creates the key pair instead, for CI and cloud agents."},
 		{name: "remove", usage: "remove NAME [--group G] [--no-rotate]", summary: "Revoke access and rotate the affected keys", run: cmdRemove},
 		{name: "rotate", usage: "rotate [--group G]", summary: "Replace the key(s) and re-encrypt", run: cmdRotate},
 		{name: "unlock", usage: "unlock [--identity PATH]", summary: "Get access after cloning: decrypts the files", run: cmdUnlock},
@@ -109,6 +117,9 @@ func newFlags(name string) *flag.FlagSet {
 		if c.name == name {
 			fs.Usage = func() {
 				fmt.Fprintf(os.Stderr, "Usage: kis %s\n", c.usage)
+				if c.help != "" {
+					fmt.Fprintf(os.Stderr, "\n%s\n\n", c.help)
+				}
 				fs.PrintDefaults()
 			}
 		}

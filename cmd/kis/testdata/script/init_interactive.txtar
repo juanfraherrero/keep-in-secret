@@ -23,7 +23,6 @@ stderr 'Add partners now\? \[y/N\]: '
 stderr 'Partner name \(empty to finish\): '
 stdout '✓ added ana \(1 key\(s\), ssh\)'
 ! stdout 'every one of these keys'
-stdout 'This repo uses SSH keys'
 
 # The menu choice was honoured: no kis key was generated.
 ! exists $KIS_KEY
