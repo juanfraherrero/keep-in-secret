@@ -1,7 +1,7 @@
 # --identity with a key outside the standard places (~/.config/kis/identity,
 # ~/.ssh/id_ed25519, ~/.ssh/id_rsa). kis uses it, but doesn't remember the
-# path (issue #9): every later unlock needs --identity again, or KIS_IDENTITY,
-# and creating a group needs KIS_IDENTITY.
+# path (issue #9): every later command that needs the key (unlock, and sync or
+# add when they create a group) takes --identity again, or KIS_IDENTITY.
 
 sshkey owner@work $WORK/keys/work_ed25519
 
@@ -30,7 +30,7 @@ encrypted .env
 
 # Passing the path again works, and uses only that file.
 exec kis unlock --identity $WORK/keys/work_ed25519
-stdout 'unlocked as owner; decrypted 1 file\(s\)'
+stdout 'unlocked as owner \(key from --identity .*work_ed25519\); decrypted 1 file\(s\)'
 cmp .env $WORK/env
 
 # KIS_IDENTITY makes the path stick for every command.
@@ -41,17 +41,25 @@ exec kis unlock
 stdout 'unlocked as owner'
 cmp .env $WORK/env
 
-# Creating a group must know which partner you are: without KIS_IDENTITY
-# kis can't find your key, and there is no --identity flag on sync.
+# Creating a group must know which partner you are: without --identity or
+# KIS_IDENTITY kis can't find your key. sync takes --identity like unlock.
 env KIS_IDENTITY=
 cp $WORK/gitencrypt-with-group .gitencrypt
 ! exec kis sync
 stderr 'creating group prod: none of this machine.s keys belongs to a partner'
 ! exists .kis/keys/prod
-env KIS_IDENTITY=$WORK/keys/work_ed25519
-exec kis sync
+exec kis sync --identity $WORK/keys/work_ed25519
 stdout 'created group prod with you \(owner\) as its member'
 exists .kis/keys/prod/owner.age
+
+# So does add, when --group creates a group.
+exec kis add ana --new-key
+! exec kis add ana --group ops
+stderr 'creating group ops: none of this machine.s keys belongs to a partner'
+! exists .kis/keys/ops
+exec kis add ana --group ops --identity $WORK/keys/work_ed25519
+stdout 'created group ops \(you are a member as owner\)'
+exists .kis/keys/ops/owner.age
 
 -- app/.env --
 TOKEN=abc

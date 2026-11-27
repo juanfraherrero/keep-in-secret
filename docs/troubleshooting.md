@@ -91,7 +91,47 @@ already set up.
   refreshes a section that exists, so coding agents won't get the kis rules
   until you add it.
 
+### `The only key that can unlock this repository is …`
+
+**Cause:** `kis init` ran without a terminal (a coding agent, CI) and its key
+is the only partner. If that key lives on a disposable machine or in a
+platform secret, losing it means nobody can unlock the repository again.
+
+**What to do:** before pushing, add another partner, usually the person who
+owns the repository: `kis add NAME KEY` with their public key, then commit.
+
 ## Keys
+
+### Which private key is kis using?
+
+Every command that needs your private key (`init`, `unlock`, `pubkey`, and
+`sync` or `add` when they create a group) applies the same rule. First match
+wins:
+
+1. `--identity PATH`: only that file.
+2. `KIS_PRIVATE_KEY`: the key's text (not a path); key files are ignored.
+3. The default locations: `$KIS_IDENTITY`, `~/.config/kis/identity`
+   (Windows: `%APPDATA%\kis\identity`), `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`.
+
+A source that is set but unusable is an error; kis never falls back to the
+next one.
+
+**How to see it:** `kis pubkey` prints each key it would use with its source
+(`# KIS_PRIVATE_KEY (age); key files are ignored while it is set`).
+`kis unlock` names it after the partner (`unlocked as ci (key from
+KIS_PRIVATE_KEY)`), and `kis status` shows it on the `you` line.
+
+**Common mistakes:**
+
+- `KIS_PRIVATE_KEY` left set on a laptop (copied from a CI setup, exported in
+  a shell profile). It hides your key files, so kis acts as that CI partner.
+  Unset it in that shell.
+- A key at a custom path (`~/.ssh/id_ed25519_work`) without `--identity` or
+  `KIS_IDENTITY`. kis doesn't search other files: pass `--identity PATH`, or
+  set `KIS_IDENTITY=PATH`.
+- An SSH key with a passphrase in `KIS_PRIVATE_KEY`. Nothing can type the
+  passphrase there; see
+  [`KIS_PRIVATE_KEY: passphrase-protected SSH keys can't be used here`](#kis_private_key-passphrase-protected-ssh-keys-cant-be-used-here).
 
 ### `found a key file at PATH, but it can't be opened as an age or SSH private key`
 
@@ -123,12 +163,24 @@ key it prints to someone with access. If your key lives somewhere else, run
 
 ### `creating group G: none of this machine's keys belongs to a partner`
 
-**Cause:** creating a group needs to know which partner you are, and kis
-only looks for your key in the standard places listed above. This happens
-when you set the repository up with `--identity PATH`.
+**Cause:** creating a group needs to know which partner you are, and the key
+kis found ([which key](#which-private-key-is-kis-using)) belongs to nobody in
+the repository. This usually happens when you set the repository up with
+`--identity PATH` and didn't pass it again.
 
-**What to do:** set `KIS_IDENTITY=PATH` to the key you used with
-`--identity`, and run the command again.
+**What to do:** run the same command again with `--identity PATH` (the key you
+used at init), or set `KIS_IDENTITY=PATH`. If `KIS_PRIVATE_KEY` is set, that
+key is the one being used: unset it unless this machine is that partner.
+
+### `KIS_PRIVATE_KEY: not an age or SSH private key`
+
+**Cause:** the variable is set, but its value isn't a private key (a public
+key, a path, a truncated copy). kis stops instead of using your key files.
+
+**What to do:** put the whole private key text in it (`AGE-SECRET-KEY-1…`, or
+an SSH private key including its BEGIN and END lines), or unset it. The same
+applies to `--identity: no such file` and `KIS_IDENTITY: no such file`: fix the
+path or drop it.
 
 ### `incorrect passphrase for your SSH key; nothing was unlocked`
 

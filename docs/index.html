@@ -547,6 +547,7 @@ footer .wrap { display: flex; justify-content: space-between; align-items: cente
     <div class="links">
       <a class="l" href="#flow">Flow</a>
       <a class="l" href="#start">Get started</a>
+      <a class="l" href="#agents">Agents &amp; CI</a>
       <a class="l" href="#how">How it works</a>
       <a class="btn sm" href="https://github.com/juanfraherrero/keep-in-secret"><svg><use href="#i-gh"/></svg>GitHub</a>
     </div>
@@ -720,9 +721,49 @@ git clone … &amp;&amp; cd …
       <div class="cmd"><code>kis rotate</code><span>New master key, re-encrypt everything</span></div>
       <div class="cmd"><code>kis sync</code><span>Apply <code class="mono">.gitencrypt</code> edits to <code class="mono">.gitattributes</code> (<a href="https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md" style="color:var(--cyan)">common patterns per stack</a>)</span></div>
       <div class="cmd"><code>kis status --check</code><span>Is it safe to push? Exits 1 if a secret would leave in plaintext; <code class="mono">--json</code> for agents, <code class="mono">--since origin/main</code> for PRs</span></div>
-      <div class="cmd"><code>kis pubkey</code><span>Print the public keys found on this machine</span></div>
+      <div class="cmd"><code>kis pubkey</code><span>Print the public keys kis uses here, and where each comes from</span></div>
     </div>
     <div class="more reveal"><a class="btn" href="https://github.com/juanfraherrero/keep-in-secret#readme"><svg><use href="#i-book"/></svg>Read the full README</a></div>
+  </div>
+</section>
+
+<!-- ================= AGENTS AND CI ================= -->
+<section id="agents">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">Agents and CI</div>
+      <h2>Every agent is a partner. <span class="grad">None holds the only key.</span></h2>
+      <p class="sub">CI runners and cloud agents (Codex, Claude Code on the web, Copilot…) start from a fresh clone with no key file. Their key arrives as one secret, <code class="mono">KIS_PRIVATE_KEY</code>, and every kis command uses it.</p>
+    </div>
+    <div class="start">
+      <div class="card hov sc reveal">
+        <span class="n">01 · UNLOCK</span>
+        <h3>One variable, one command</h3>
+        <p>Store the agent's private key as the platform secret <code class="mono">KIS_PRIVATE_KEY</code>. While it is set it is the only key kis uses; key files are ignored. Commits, pulls and checkouts after the unlock need nothing else.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis unlock</span>   <span class="c"># unlocked as ci (key from KIS_PRIVATE_KEY)</span></pre></div>
+      </div>
+      <div class="card hov sc reveal d1">
+        <span class="n">02 · ONE PARTNER PER AGENT</span>
+        <h3>A master agent hands out keys</h3>
+        <p>An unlocked person or agent creates one partner per agent. Each printed key goes straight into that agent's secret store, never into logs, commits or chat. Revoking one agent leaves the others working.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis add</span> agent-1 --new-key
+<span class="k">kis add</span> agent-2 --new-key --group prod
+git commit -m "agent access" &amp;&amp; git push</pre></div>
+      </div>
+      <div class="card hov sc reveal d2">
+        <span class="n">03 · NEVER THE ONLY KEY</span>
+        <h3>Not on a disposable machine</h3>
+        <p>An agent can run the first <code class="mono">kis init</code> with <code class="mono">KIS_PRIVATE_KEY</code> set: no key file is written. Without a terminal, init warns when its key is the only partner. A VM gets destroyed and a secret gets deleted, so add a person before pushing.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis add</span> NAME KEY   <span class="c"># a human partner, before git push</span></pre></div>
+      </div>
+    </div>
+    <div class="card cmds reveal">
+      <div class="cmd"><code>--identity PATH</code><span>1st: only that private key file</span></div>
+      <div class="cmd"><code>KIS_PRIVATE_KEY</code><span>2nd: the key's text; key files are ignored</span></div>
+      <div class="cmd"><code>default places</code><span>3rd: <code class="mono">$KIS_IDENTITY</code>, <code class="mono">~/.config/kis/identity</code>, <code class="mono">~/.ssh/id_ed25519</code>, <code class="mono">~/.ssh/id_rsa</code></span></div>
+      <div class="cmd"><code>kis pubkey</code><span>Shows which key every command will use. A set but broken source is an error, never a fallback</span></div>
+    </div>
+    <div class="more reveal"><a class="btn" href="llms.txt"><svg><use href="#i-book"/></svg>Instructions for agents: llms.txt</a></div>
   </div>
 </section>
 

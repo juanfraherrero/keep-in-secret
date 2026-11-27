@@ -51,7 +51,7 @@ cd $WORK/p
 exec git pull -q
 snapshot before-unlock
 exec kis unlock
-stdout '✓ unlocked as partner; decrypted 1 file\(s\)'
+stdout '✓ unlocked as partner \(key .*identity\); decrypted 1 file\(s\)'
 changed before-unlock ~.env ~.git/config +.git/hooks/pre-commit +.git/kis/key
 cmp .env $WORK/v1
 exec git status --porcelain

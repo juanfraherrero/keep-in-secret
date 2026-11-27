@@ -51,7 +51,7 @@ cd $WORK
 exec git clone -q $REMOTE ana
 cd ana
 exec kis unlock
-stdout '✓ unlocked as ana \(groups: default\); decrypted 2 file'
+stdout '✓ unlocked as ana \(key .*identity\) \(groups: default\); decrypted 2 file'
 stdout '→ not in group prod: \.env\.production stays encrypted \(ask a member: kis add ana --group prod\)'
 ! encrypted .env
 encrypted .env.production
@@ -74,7 +74,7 @@ cd $WORK
 exec git clone -q $REMOTE ops
 cd ops
 exec kis unlock
-stdout '✓ unlocked as ops \(groups: prod\)'
+stdout '✓ unlocked as ops \(key .*\) \(groups: prod\)'
 encrypted .env
 ! encrypted .env.production
 cmp .env.production $WORK/prod

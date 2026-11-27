@@ -28,7 +28,7 @@ stdout 'state +LOCKED'
 
 # unlock with the SSH key restores everything
 exec kis unlock
-stdout 'unlocked as owner; decrypted 1 file\(s\)'
+stdout 'unlocked as owner \(key .*\.ssh[/\\]id_ed25519\); decrypted 1 file\(s\)'
 cmp .env $WORK/env
 exec git status --porcelain
 ! stdout .

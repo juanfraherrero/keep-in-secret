@@ -39,9 +39,12 @@ is plaintext, git history and the remote only hold ciphertext.
   or isn't in that file's group (~.gitencrypt~ lines ending in ~@GROUP~). That is
   expected: leave the file alone. ~kis unlock~ needs the developer's private key,
   or on CI and cloud agents the ~KIS_PRIVATE_KEY~ secret (~kis add NAME --new-key~).
-- If that key is not in a standard place, use ~kis unlock --identity PATH~ on
-  every unlock (PATH is the developer's private key file: ask them, never guess
-  or search for keys), or have them set ~KIS_IDENTITY=PATH~.
+- Every kis command picks that key the same way, first match wins:
+  ~--identity PATH~, then ~KIS_PRIVATE_KEY~ (the key itself; key files are
+  ignored), then ~$KIS_IDENTITY~, ~$HOME/.config/kis/identity~,
+  ~$HOME/.ssh/id_ed25519~, ~$HOME/.ssh/id_rsa~. ~kis pubkey~ shows which. If the key is elsewhere, pass
+  ~--identity PATH~ (PATH is the developer's private key file: ask them, never
+  guess or search for keys), or have them set ~KIS_IDENTITY=PATH~.
 - Do not copy secret values into code, logs, commit messages, pull requests or
   chat unless the task requires it.
 `, "~", "`") + endMark + "\n"

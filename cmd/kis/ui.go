@@ -15,8 +15,12 @@ var assumeYes bool
 var stdinReader = bufio.NewReader(os.Stdin)
 
 func interactive() bool {
-	return !assumeYes && term.IsTerminal(int(os.Stdin.Fd()))
+	return !assumeYes && hasTerminal()
 }
+
+// hasTerminal reports whether a person could be typing: false for coding
+// agents and CI, whatever -y says.
+func hasTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 
 func readLine() string {
 	line, _ := stdinReader.ReadString('\n')
