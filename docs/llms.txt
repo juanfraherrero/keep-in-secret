@@ -87,8 +87,8 @@ matches at the repository root; use `**/` to match at any depth (monorepos).
 
 - `kis init [--identity PATH] [--name NAME] [--no-agents] [-y]`: set up encryption
 - `kis status [--check] [--json] [--since REV]`: state and whether it is safe to push
-- `kis sync`: apply `.gitencrypt` edits and re-encrypt
-- `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent. `github:USER` grants access to every ed25519/RSA key on that GitHub account, read once; for a single key, ask the person for it
+- `kis sync [--identity PATH]`: apply `.gitencrypt` edits and re-encrypt
+- `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G] [--identity PATH]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent. `github:USER` grants access to every ed25519/RSA key on that GitHub account, read once; for a single key, ask the person for it
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
 - `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone

@@ -296,14 +296,14 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | `kis init [--identity PATH] [--name NAME] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey [--identity PATH]` | Print the public keys kis uses here, and where each comes from |
-| `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
+| `kis add NAME KEY\|github:USER\|FILE.pub… [--group G] [--identity PATH]` | Give someone access (to a group; omit the key for an existing partner) |
 | `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, for `KIS_PRIVATE_KEY` |
 | `kis remove NAME [--group G] [--no-rotate]` | Revoke access and rotate the affected keys |
 | `kis rotate [--group G]` | New master key(s), re-encrypt those files |
 | `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook. Uses `KIS_PRIVATE_KEY` when set |
 | `kis lock [--force]` | Forget the key here and turn files back into ciphertext |
 | `kis status [--check] [--json] [--since REV]` | State, partners, encrypted files, and whether it is safe to push |
-| `kis sync` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
+| `kis sync [--identity PATH]` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
 
 ## Keys
 
