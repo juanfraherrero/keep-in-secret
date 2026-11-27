@@ -195,6 +195,36 @@ path or drop it.
 **What to do:** give that machine its own key with `kis add NAME --new-key`
 and store the printed key as `KIS_PRIVATE_KEY`.
 
+### `kis add NAME --new-key` printed the key, but my pipe or log only got part of the output
+
+**Cause:** this is by design. With `--new-key`, stdout carries only the
+private key, on one line. The `✓ added` line, "shown once, saved nowhere" and
+the instructions go to stderr. At a terminal both appear as one block; piped,
+only the key reaches the next command, so it can go straight into the CI or
+agent platform's secret store without appearing in any output. A script that
+captures stdout gets the key and nothing else; one that captures stderr (or
+`2>&1`) gets the messages.
+
+**What to do:** pipe stdout into the platform's secret store as
+`KIS_PRIVATE_KEY`. The command depends on the platform; for example, with
+GitHub Actions and the GitHub CLI:
+`kis add ci --new-key | gh secret set KIS_PRIVATE_KEY`. Never redirect it into
+a file, a log or a chat.
+
+### A private key from `kis add --new-key` was printed where it shouldn't be
+
+**Cause:** the key reached a log, a file, a chat or an agent's transcript,
+for example because stdout wasn't piped into the secret store.
+
+**What to do:** replace it with `kis add NAME --new-key --force` and store the
+new key as that machine's `KIS_PRIVATE_KEY`, **then always run `kis rotate`**,
+and commit and push. `--force` alone isn't enough: the old key can still open
+the repository key from an older `.kis/keys/NAME.age` in the git history, and
+with it every current and future secret. Only `kis rotate` replaces the
+repository key. Partners run `kis unlock` after pulling. Secrets the leaked key
+could already decrypt stay readable to whoever has it: rotate the real
+credentials too.
+
 ## Access
 
 ### `none of your keys has access to this repository yet`
