@@ -11,6 +11,7 @@ grep '^# Our project$' AGENTS.md
 grep '^Use tabs\.$' AGENTS.md
 grep '^## Secrets are committed encrypted \(kis\)$' AGENTS.md
 grep 'run `kis status --check`' AGENTS.md
+grep 'Run `kis add NAME --new-key` only piped straight into the CI or agent' AGENTS.md
 grep '^<!-- <<< kis -->$' CLAUDE.md
 grep '^See AGENTS\.md$' CLAUDE.md
 stored : .env

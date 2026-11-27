@@ -11,13 +11,31 @@ exec git commit -qm init
 
 # The owner creates a bot partner in one step. Its private key is printed
 # once and is never written to disk, not even in the repository.
+# stdout is the key alone, on one line, so it can be piped straight into the
+# platform's secret store; every message goes to stderr.
 exec kis add ci --new-key
-stdout '✓ added ci \(1 key\(s\), age\)'
-stdout 'Private key of ci \(shown once, saved nowhere\):'
-stdout 'Store it as the KIS_PRIVATE_KEY secret'
+stdout '\AAGE-SECRET-KEY-1[0-9A-Z]+\n\z'
+stderr '✓ added ci \(1 key\(s\), age\)'
+stderr 'Private key of ci \(shown once, saved nowhere\):'
+stderr 'The private key is on stdout: pipe it straight into your CI or agent platform''s secret store as KIS_PRIVATE_KEY; never into logs, files or chat\.'
+stderr 'Now commit and push\. Lost the key\? kis add ci --new-key --force'
+! stderr 'AGE-SECRET-KEY'
+readvar FIRST_KEY stdout 'AGE-SECRET-KEY-1[0-9A-Z]+'
+nowhere FIRST_KEY $WORK
+exists .kis/keys/ci.age
+
+# A key printed where it shouldn't be is replaced with --force, with the same
+# output split. The first key stops working once this is committed and pushed.
+exec kis add ci --new-key --force
+stdout '\AAGE-SECRET-KEY-1[0-9A-Z]+\n\z'
+stderr '✓ added ci \(1 key\(s\), age\)'
+stderr 'The private key is on stdout'
+! stderr 'AGE-SECRET-KEY'
 readvar CI_KEY stdout 'AGE-SECRET-KEY-1[0-9A-Z]+'
 nowhere CI_KEY $WORK
-exists .kis/keys/ci.age
+! exec kis add ci --new-key
+stderr 'ci already has access; use --force'
+! stdout .
 ! exec kis add ci2 age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq --new-key
 stderr '--new-key creates the key, so don''t pass one'
 
@@ -26,7 +44,8 @@ cp $WORK/gitencrypt .gitencrypt
 cp $WORK/prod .env.production
 exec kis sync
 exec kis add deploy --new-key --group prod
-stdout '✓ added deploy to prod'
+stdout '\AAGE-SECRET-KEY-1[0-9A-Z]+\n\z'
+stderr '✓ added deploy to prod'
 readvar DEPLOY_KEY stdout 'AGE-SECRET-KEY-1[0-9A-Z]+'
 nowhere DEPLOY_KEY $WORK
 exec git add .
@@ -44,6 +63,12 @@ encrypted .env
 # Without the variable it can't unlock, and says what to do.
 ! exec kis unlock
 stderr 'no key found on this machine'
+
+# The replaced key no longer unlocks.
+env KIS_PRIVATE_KEY=$FIRST_KEY
+! exec kis unlock
+stderr 'none of your keys has access'
+encrypted .env
 
 # With it, one command. The key comes from the environment only.
 env KIS_PRIVATE_KEY=$CI_KEY
