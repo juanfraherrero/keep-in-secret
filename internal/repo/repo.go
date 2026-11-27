@@ -554,10 +554,21 @@ func (r *Repo) Dirty(paths []string) ([]string, error) {
 
 // Renormalize re-runs the clean filter on tracked secrets and stages the result.
 func (r *Repo) Renormalize(paths []string) error {
-	if len(paths) == 0 {
+	// A tracked file missing from disk is a deletion in progress: git add
+	// would fail ("unable to stat") and there is nothing to encrypt. Its
+	// index entry stays as is; kis status reports it if it is plaintext (#16).
+	var present []string
+	for _, p := range paths {
+		if _, err := os.Lstat(r.path(p)); err == nil {
+			present = append(present, p)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if len(present) == 0 {
 		return nil
 	}
-	_, err := r.Git(append([]string{"add", "--renormalize", "--"}, paths...)...)
+	_, err := r.Git(append([]string{"add", "--renormalize", "--"}, present...)...)
 	return err
 }
 
