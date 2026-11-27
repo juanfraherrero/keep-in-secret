@@ -149,6 +149,26 @@ _Not documented yet._
 
 ## Committing
 
+### `these were already committed in PLAINTEXT before: FILE`
+
+**Cause:** at `kis init`, FILE is tracked, listed in `.gitencrypt`, and the
+last commit stores it in plaintext. From now on it is committed encrypted, but
+the old commits still contain the plaintext.
+
+**What to do:** rotate the credentials in that file (new passwords, new API
+keys). Rewriting git history is outside kis.
+
+### No warning, but a secret was committed in plaintext before kis
+
+**Cause:** `kis init` only checks the last commit, and only files tracked
+right now. A secret committed in an earlier commit, on another branch, under
+another name, or removed from git before kis (`git rm --cached` plus
+`.gitignore`) is not detected.
+
+**What to do:** if you know or suspect a secret was ever committed in
+plaintext, rotate it. It is still in the history, and on the remote if it was
+pushed.
+
 ### `refusing to store FILE in plaintext: repository is locked`
 
 **Cause:** `git add` of a secret file in a clone without the key. kis

@@ -356,6 +356,11 @@ what kis suggests to new partners.
 
 - Anyone who could unlock the repo can read every secret in **past commits**.
   `kis remove` rotates the key for future commits; also rotate the real credentials.
+- **Secrets committed before kis stay in history.** `kis init` only checks the
+  last commit: it warns about files listed in `.gitencrypt` that are tracked
+  and stored there in plaintext. A secret committed earlier, on another branch,
+  under another name, or already removed from git is not detected. If a secret
+  was ever committed in plaintext, it is still in the history: rotate it.
 - File names and sizes are visible, and anyone can see *when* an encrypted file
   changed (not what changed).
 - Secrets are only as safe as the least protected machine holding a key.
