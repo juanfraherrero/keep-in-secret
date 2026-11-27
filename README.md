@@ -234,8 +234,19 @@ group; to share it with more people, add them to that group. Without any
 A CI runner or a cloud agent (Codex, Claude Code on the web, Copilot coding
 agent…) starts from a fresh clone with no key, so its secret files stay
 ciphertext. Most jobs don't need more: building, testing code and
-`kis status --check` work locked. When a job needs the real values (a deploy,
-integration tests), make the machine a partner of its own:
+`kis status --check` work locked.
+
+A job or agent that may commit should still run `kis unlock` first, even with no
+key: it fails with "no key found" or "none of your keys has access", but sets
+git up anyway, so `git add` refuses a secret file holding plaintext
+(`refusing to store .env in plaintext: repository is locked`) instead of
+committing it. Unchanged secret files and all other files commit, pull and push
+as usual. A clone where nobody runs kis can't be protected from inside it; the
+`kis status --check --since` workflow [above](#is-it-safe-to-push) catches its
+commits in the pull request.
+
+When a job needs the real values (a deploy, integration tests), make the
+machine a partner of its own:
 
 ```sh
 kis add ci --new-key              # or: kis add deploy --new-key --group prod
@@ -390,7 +401,10 @@ what kis suggests to new partners.
 - File names and sizes are visible, and anyone can see *when* an encrypted file
   changed (not what changed).
 - Secrets are only as safe as the least protected machine holding a key.
-- Without `kis unlock`, a clone just has ciphertext; nothing leaks.
+- Without `kis unlock`, a clone just has ciphertext, but git there doesn't
+  encrypt either: an edited or new secret file would be committed in plaintext.
+  Run `kis unlock` in every clone that may commit, even without a key; it sets
+  git up so that `git add` refuses instead.
 
 ## Development
 

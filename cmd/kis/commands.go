@@ -970,6 +970,9 @@ func readable(r *repo.Repo) (ok []string, locked map[string][]string, err error)
 
 // ---- unlock / lock ----
 
+// wiredNote ends every failed `kis unlock`: git was wired anyway.
+const wiredNote = "git is set up so secret files can't be committed in plaintext from this clone."
+
 func cmdUnlock(args []string) error {
 	fs := newFlags("unlock")
 	identityFlag(fs)
@@ -981,13 +984,19 @@ func cmdUnlock(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Wire git before trying any key: a clone without access then refuses
+	// to commit plaintext secrets instead of storing them silently.
+	if err := wireGit(r); err != nil {
+		return err
+	}
+	failed := func(err error) error { return fmt.Errorf("%w\n  %s", err, wiredNote) }
 
 	res, err := keys.Resolve(identityPath)
 	if err != nil {
-		return err
+		return failed(err)
 	}
 	if len(res.Keys) == 0 {
-		return errors.New("no key found on this machine.\n  Run `kis keygen`, send the printed public key to someone with access,\n  and run `kis unlock` again once they have added you")
+		return failed(errors.New("no key found on this machine.\n  Run `kis keygen`, send the printed public key to someone with access,\n  and run `kis unlock` again once they have added you"))
 	}
 	var ids []age.Identity
 	var loaded []keys.Key
@@ -999,7 +1008,7 @@ func cmdUnlock(args []string) error {
 		id, err := k.Identity(passphrasePrompt(k.Path))
 		if err != nil {
 			if res.From == keys.FromFlag {
-				return err
+				return failed(err)
 			}
 			warn("skipping %v", err)
 			continue
@@ -1010,9 +1019,9 @@ func cmdUnlock(args []string) error {
 	masters, name, err := r.UnwrapKeys(ids)
 	if err != nil && !errors.Is(err, repo.ErrNoAccess) {
 		if strings.Contains(err.Error(), "decryption password incorrect") {
-			return errors.New("incorrect passphrase for your SSH key; nothing was unlocked")
+			return failed(errors.New("incorrect passphrase for your SSH key; nothing was unlocked"))
 		}
-		return err
+		return failed(err)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kis: none of your keys has access to this repository yet.")
@@ -1027,6 +1036,7 @@ func cmdUnlock(args []string) error {
 				fmt.Fprintf(os.Stderr, "    %s\n", k.Pub)
 			}
 		}
+		fmt.Fprintln(os.Stderr, wiredNote)
 		return exitError{}
 	}
 	// Start clean: keys of groups you were removed from must not linger.
@@ -1041,9 +1051,6 @@ func cmdUnlock(args []string) error {
 			}
 			groups = append(groups, g)
 		}
-	}
-	if err := wireGit(r); err != nil {
-		return err
 	}
 	files, locked, err := readable(r)
 	if err != nil {
@@ -1188,6 +1195,8 @@ type groupJSON struct {
 	HaveKey bool     `json:"have_key"`
 }
 
+const wireFix = "kis unlock (sets git up even without access to the secrets)"
+
 func collectStatus(since string) (statusJSON, error) {
 	r, err := openInitialized()
 	if err != nil {
@@ -1238,14 +1247,15 @@ func collectStatus(since string) (statusJSON, error) {
 		st.Groups = append(st.Groups, groupJSON{g, r.Members(g), slices.Contains(held, g)})
 	}
 	// A clone that cannot encrypt on `git add` may leak the next commit,
-	// but CI checkouts never commit, so these only warn.
-	if st.Unlocked && !st.GitFilters {
+	// locked or not, but CI checkouts never commit, so these only warn.
+	// `kis unlock` wires git even when it then finds no access.
+	if !st.GitFilters {
 		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
-			Message: "git filters are not configured in this clone: `git add` would stage secrets in plaintext", Fix: "kis unlock"})
+			Message: "git filters are not configured in this clone: `git add` would stage secrets in plaintext", Fix: wireFix})
 	}
-	if st.Unlocked && !st.PreCommit {
+	if !st.PreCommit {
 		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
-			Message: "the pre-commit check is not installed in this clone", Fix: "kis unlock"})
+			Message: "the pre-commit check is not installed in this clone", Fix: wireFix})
 	}
 	if st.Git != nil && !st.Git.Supported {
 		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,

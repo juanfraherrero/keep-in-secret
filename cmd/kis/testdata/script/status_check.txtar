@@ -66,7 +66,8 @@ stdout '✗ \.gitattributes: \.gitencrypt changed but \.gitattributes was not up
 exec kis sync
 exec git commit -qm 'more secrets'
 
-# A CI checkout: no kis unlock, no filters. Still safe, no warnings.
+# A CI checkout: no kis unlock, no filters. Still safe to push; the missing
+# wiring only warns, since a checkout that never commits can't leak.
 exec git push -q $REMOTE HEAD:main
 cd $WORK
 exec git clone -q $REMOTE ci
@@ -75,7 +76,15 @@ encrypted .env
 exec kis status --check
 stdout 'state +LOCKED'
 stdout 'safe to push +yes'
-! stdout '!'
+stdout '! git filters are not configured in this clone'
+stdout '! the pre-commit check is not installed in this clone'
+stdout 'fix: kis unlock \(sets git up even without access to the secrets\)'
+! stdout '✗'
+exec kis status --json
+stdout '"safe_to_push": true'
+stdout '"severity": "warning",\s+"message": "git filters are not configured'
+stdout '"severity": "warning",\s+"message": "the pre-commit check is not installed'
+! stdout '"severity": "error"'
 
 # Plaintext committed before kis was set up: the index is encrypted now, but
 # HEAD is not until the next commit.
