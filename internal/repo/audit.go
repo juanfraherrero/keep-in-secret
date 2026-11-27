@@ -110,15 +110,43 @@ func (r *Repo) Audit(since string) (Audit, error) {
 		a.Files = append(a.Files, FileStatus{p, state, groups[p], slices.Contains(held, groups[p])})
 	}
 
+	// Local files kis doesn't encrypt, tracked in plaintext. Untracked ones,
+	// ignored or not, are fine where they are.
+	indexLocal, err := r.TrackedLocalPlaintext(":")
+	if err != nil {
+		return a, err
+	}
+	var headLocal []string
+	if hasHead {
+		if headLocal, err = r.TrackedLocalPlaintext("HEAD"); err != nil {
+			return a, err
+		}
+	}
+	for _, p := range headLocal {
+		add(Problem{Severity: SeverityError, Path: p, Commit: "HEAD",
+			Message: "a local file (" + gitencrypt.LocalPattern + ") the last commit stores in plaintext: kis doesn't encrypt it",
+			Fix:     localFix(p) + "; then commit, and rotate the values it holds: older commits still contain them"})
+	}
+	for _, p := range indexLocal {
+		if !slices.Contains(headLocal, p) {
+			add(Problem{Severity: SeverityError, Path: p,
+				Message: "a local file (" + gitencrypt.LocalPattern + ") staged in plaintext: kis doesn't encrypt it and it isn't gitignored",
+				Fix:     localFix(p)})
+		}
+	}
+
 	if since != "" {
 		leaks, err := r.plaintextCommits(since)
 		if err != nil {
 			return a, err
 		}
 		for _, l := range leaks {
+			fix := "rewrite that commit (git rebase -i) so it never holds the secret readable, then rotate the secret if it was already pushed"
+			if l.local {
+				fix = "rewrite that commit (git rebase -i) so it never holds the file, then rotate the values it holds if it was already pushed"
+			}
 			add(Problem{Severity: SeverityError, Path: l.path, Commit: l.commit,
-				Message: l.problem,
-				Fix:     "rewrite that commit (git rebase -i) so it never holds the secret readable, then rotate the secret if it was already pushed"})
+				Message: l.problem, Fix: fix})
 		}
 	}
 
@@ -140,11 +168,21 @@ func (r *Repo) revExists(rev string) bool {
 	return err == nil
 }
 
-type leak struct{ commit, path, problem string }
+// localFix is how to resolve a local file stored in plaintext: keep it on
+// this machine, or share it encrypted on purpose.
+func localFix(p string) string {
+	return "to keep it on this machine, gitignore it and run " + UntrackCommand([]string{p}) + "; to share it encrypted, remove \"!" + gitencrypt.LocalPattern + "\" from .gitencrypt and run kis sync"
+}
+
+type leak struct {
+	commit, path, problem string
+	local                 bool // a local file, not a secret
+}
 
 // plaintextCommits reports every secret that a commit in since..HEAD adds or
-// modifies in plaintext, or encrypted for the wrong group. Attributes come
-// from the index, so files later dropped from .gitencrypt are not reported.
+// modifies in plaintext, or encrypted for the wrong group, and every local
+// file it adds or modifies in plaintext. Attributes come from the index, so
+// files later dropped from .gitencrypt are not reported as secrets.
 func (r *Repo) plaintextCommits(since string) ([]leak, error) {
 	if !r.revExists(since) {
 		return nil, fmt.Errorf("unknown revision %s (in CI, fetch full history: actions/checkout with fetch-depth: 0)", since)
@@ -173,10 +211,17 @@ func (r *Repo) plaintextCommits(since string) ([]leak, error) {
 				continue
 			}
 			if g, ok := crypt.GroupOf(blob); !ok {
-				leaks = append(leaks, leak{c[:12], p, "a commit to be pushed stores it in plaintext"})
+				leaks = append(leaks, leak{c[:12], p, "a commit to be pushed stores it in plaintext", false})
 			} else if g != groups[p] {
-				leaks = append(leaks, leak{c[:12], p, "a commit to be pushed encrypts it for group " + g + " instead of " + groups[p]})
+				leaks = append(leaks, leak{c[:12], p, "a commit to be pushed encrypts it for group " + g + " instead of " + groups[p], false})
 			}
+		}
+		local, err := r.localPlaintext(gitx.SplitZ(changed), c, true)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range local {
+			leaks = append(leaks, leak{c[:12], p, "a commit to be pushed stores this local file (" + gitencrypt.LocalPattern + ") in plaintext", true})
 		}
 	}
 	return leaks, nil

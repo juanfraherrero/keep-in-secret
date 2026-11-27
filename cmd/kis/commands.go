@@ -89,7 +89,7 @@ func cmdInit(args []string) error {
 		return err
 	}
 	if created {
-		step("created .gitencrypt (.env, .env.* except examples). Edit it to add more paths")
+		step("created .gitencrypt (.env, .env.* except examples and .env*.local). Edit it to add more paths")
 	} else {
 		step("using existing .gitencrypt")
 	}
@@ -125,6 +125,9 @@ func cmdInit(args []string) error {
 	if len(plainInHistory) > 0 {
 		warn("these were already committed in PLAINTEXT before: %s", strings.Join(plainInHistory, ", "))
 		warn("they are encrypted from now on, but old commits still contain them: rotate those secrets")
+	}
+	if local, _ := r.TrackedLocalPlaintext("HEAD"); len(local) > 0 {
+		warn("already committed before: %s (old commits still contain them: rotate the values they hold)", strings.Join(local, ", "))
 	}
 
 	if interactive() && confirm("Add partners now?", false) {
@@ -355,7 +358,19 @@ func syncFiles(r *repo.Repo, notes agentNotes) error {
 		return err
 	}
 
-	// 5. The kis section coding agents read.
+	// 5. Local files kis doesn't encrypt, tracked in plaintext: committed
+	// before kis, or just taken out of encryption by a new "!.env*.local".
+	local, err := r.TrackedLocalPlaintext(":")
+	if err != nil {
+		return err
+	}
+	if len(local) > 0 {
+		warn("local files tracked in PLAINTEXT: %s (kis doesn't encrypt %s files, so the pre-commit check blocks committing them)", strings.Join(local, ", "), gitencrypt.LocalPattern)
+		warn("to keep them on this machine, gitignore them and run `%s`", repo.UntrackCommand(local))
+		warn("to share them encrypted, remove \"!%s\" from .gitencrypt and run `kis sync`", gitencrypt.LocalPattern)
+	}
+
+	// 6. The kis section coding agents read.
 	if notes == skipNotes {
 		return nil
 	}

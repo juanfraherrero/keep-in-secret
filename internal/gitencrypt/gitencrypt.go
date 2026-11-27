@@ -5,6 +5,7 @@ package gitencrypt
 
 import (
 	"fmt"
+	pathpkg "path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -28,7 +29,25 @@ const DefaultContent = `# Files matching these patterns are encrypted in git by 
 !.env.example
 !.env.sample
 !.env.template
+# Local files (.env.local, .env.development.local, ...) hold one developer's
+# values: kis never shares them. Delete this line to share them encrypted.
+!.env*.local
 `
+
+// LocalPattern names local files: one developer's values (.env.local,
+// .env.development.local, apps/web/.env.local), gitignored by frameworks such
+// as Next.js and Vite. DefaultContent excludes them, and kis refuses to let
+// them be committed in plaintext whatever .gitencrypt says.
+const LocalPattern = ".env*.local"
+
+// IsLocal reports whether path names a local file, at any depth. It ignores
+// case, so .env.LOCAL counts on every OS: .gitencrypt matching follows
+// core.ignorecase, and a name it excluded must never slip past the guard.
+func IsLocal(path string) bool {
+	base := strings.ToLower(path[strings.LastIndex(path, "/")+1:])
+	ok, _ := pathpkg.Match(LocalPattern, base)
+	return ok
+}
 
 // alwaysPlain lists paths kis needs to read without decrypting. They come last
 // in the block so a broad pattern like "*" cannot encrypt them.

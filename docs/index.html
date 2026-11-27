@@ -878,7 +878,7 @@ git commit -m "agent access" &amp;&amp; git push</pre></div>
               <tr><td><code>clean</code> · git add</td><td class="ok">encrypt</td><td class="no">refuse: nothing staged</td></tr>
               <tr><td><code>smudge</code> · checkout</td><td class="ok">decrypt</td><td>pass ciphertext through</td></tr>
               <tr><td><code>merge</code> · conflicts</td><td class="ok">decrypt, text merge, re-encrypt</td><td>refuse: normal conflict</td></tr>
-              <tr><td><code>pre-commit</code></td><td colspan="2">blocks plaintext in staged secrets, or a stale <code>.gitattributes</code></td></tr>
+              <tr><td><code>pre-commit</code></td><td colspan="2">blocks plaintext in staged secrets or local <code>.env*.local</code> files, or a stale <code>.gitattributes</code></td></tr>
               <tr><td><code>filter.required</code></td><td colspan="2">if kis crashes, git fails rather than storing plaintext</td></tr>
             </tbody>
           </table>
@@ -983,7 +983,7 @@ git commit -m "agent access" &amp;&amp; git push</pre></div>
   const typed = $('#typed');
   const script = [
     ['cmd', 'kis init -y'],
-    ['out', '<span class="t-ok">✓</span> created .gitencrypt (.env, .env.* except examples)'],
+    ['out', '<span class="t-ok">✓</span> created .gitencrypt (.env, .env.* except examples and .env*.local)'],
     ['out', '<span class="t-ok">✓</span> created repository key, encrypted for <span class="t-a">juan</span> (age)'],
     ['out', '<span class="t-ok">✓</span> configured git filters and pre-commit check'],
     ['out', '<span class="t-ok">✓</span> staged encrypted: .env'],

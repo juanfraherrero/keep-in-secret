@@ -34,15 +34,31 @@ breaks. Coding agents: ask the developer when unsure.
 !.env.example
 !.env.sample
 !.env.template
+!.env*.local
 ```
 
-**Matches:** `.env`, `.env.local`, `.env.production` and the like, in any
+**Matches:** `.env`, `.env.production`, `.env.staging` and the like, in any
 folder. `.env.example`, `.env.sample` and `.env.template` stay readable.
 
 **Why secret:** dotenv loaders (dotenv, python-dotenv, godotenv, dotenvy,
 phpdotenv…) read API keys, database passwords and tokens from these files.
 The example files hold the variable names with empty or fake values, so new
 teammates know what to fill in; they are meant to be read by everyone.
+
+**Local files stay local:** `.env.local`, `.env.development.local`,
+`apps/web/.env.local` and every other `.env*.local` hold one developer's
+values (their own API URL, personal tokens, debug flags). Next.js and Vite
+gitignore them on purpose, so kis doesn't share them, encrypted or not, and
+leaves their `.gitignore` rules alone. If a project doesn't gitignore them, the
+pre-commit check blocks committing one in plaintext and `kis status` reports
+it as an error. To share them encrypted on purpose, delete the `!.env*.local`
+line and run `kis sync`.
+
+Names that only look local are still encrypted: `.env.local.bak` (a copy of a
+secret), `.env.localhost`, and `.env.local.example` (a template that ends in
+`.example`, not `.local`; add `!.env.local.example` to keep one readable).
+Case follows git's `core.ignorecase`: `.env.LOCAL` is excluded on macOS and
+Windows but encrypted on Linux; the pre-commit check covers it either way.
 
 **CI:** this is the default `.gitencrypt`. Tests that load `.env` need
 `kis unlock` on CI; tests that set their variables another way don't.

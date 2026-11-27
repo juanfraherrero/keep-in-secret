@@ -105,9 +105,18 @@ kis init --identity ~/.ssh/id_ed25519   # or: use your SSH key; partners are the
 git commit -m "Set up kis encryption" && git push
 ```
 
-`kis init` creates `.gitencrypt` (`.env`, `.env.*`, except `.env.example`), encrypts
-matching files, offers to un-ignore `.env` from `.gitignore`, adds the kis section
-to `AGENTS.md`, and prints the instructions to send to partners.
+`kis init` creates `.gitencrypt` (`.env`, `.env.*`, except `.env.example` and
+local files), encrypts matching files, offers to un-ignore `.env` from `.gitignore`,
+adds the kis section to `AGENTS.md`, and prints the instructions to send to partners.
+
+**Local files are never shared.** `.env.local`, `.env.development.local` and every
+other `.env*.local` hold one developer's values (their own API URL, personal
+tokens), and frameworks such as Next.js and Vite gitignore them on purpose. The
+default `.gitencrypt` excludes them (`!.env*.local`), so kis doesn't encrypt,
+stage or un-ignore them, and leaves your `.gitignore` rules for them alone. If
+your project doesn't gitignore them, the pre-commit check blocks committing one
+in plaintext, and `kis status --check` fails. To share them encrypted on purpose,
+delete the `!.env*.local` line from `.gitencrypt` and run `kis sync`.
 
 `--name` is how partners will see you: it is committed in `.kis/recipients.toml`
 and names your key file, `.kis/keys/NAME.age`. Without it, kis suggests the part
@@ -139,20 +148,21 @@ $ kis status
 …
 encrypted files
   .env                           encrypted in git
-  .env.local                     PLAINTEXT in index (run `kis sync`)
+  .env.production                PLAINTEXT in index (run `kis sync`)
 safe to push    NO: fix the problems below before pushing
                 (only files matched by .gitencrypt are checked; other files are not scanned for secrets)
-  ✗ .env.local: staged in plaintext
+  ✗ .env.production: staged in plaintext
     fix: kis sync (or kis unlock first if this clone is locked)
 ```
 
 When everything is fine it names what it verified:
-`safe to push    yes: .env, .env.local are encrypted in git`. kis vouches for
+`safe to push    yes: .env, .env.production are encrypted in git`. kis vouches for
 the files in `.gitencrypt`, not for an API key hardcoded somewhere else; pair it
 with a secret scanner (gitleaks, GitHub secret scanning) if you need that.
 
 `kis status` checks that every secret is ciphertext in the index and in the last
-commit, and that `.gitattributes` matches `.gitencrypt`. It needs no key, so it
+commit, that no local file (`.env*.local`) is tracked in plaintext, and that
+`.gitattributes` matches `.gitencrypt`. It needs no key, so it
 also works in CI and in locked clones.
 
 - `--check` exits 1 unless it is safe to push.

@@ -137,7 +137,12 @@ A `pre-commit` hook runs `kis precommit`, which blocks the commit when:
 
 - `.gitencrypt` changed but `.gitattributes` wasn't regenerated (`kis sync`), or
 - a staged blob that *should* be encrypted doesn't carry the kis header
-  (`git cat-file blob :path`, checked against attributes from the **index**).
+  (`git cat-file blob :path`, checked against attributes from the **index**), or
+- a staged local file (`.env*.local`, any depth, any case) that kis doesn't
+  encrypt holds plaintext. The default `.gitencrypt` excludes local files, so
+  the check above can't see them; without this one, a project that doesn't
+  gitignore them would commit one developer's tokens in plaintext.
+  `kis status` reports the same for the index, `HEAD` and `--since` commits.
 
 An existing hook is never overwritten. kis prints the line you need to add to it.
 

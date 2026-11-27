@@ -49,6 +49,7 @@ grep 'kis precommit' .git/hooks/pre-commit
 attr .env filter kis
 attr .env.production filter kis
 attr .env.example filter unspecified
+attr .env.local filter unspecified
 attr .kis/keys/owner.age filter unspecified
 attr README.md filter unspecified
 attr .env merge kis
@@ -115,6 +116,9 @@ A  AGENTS.md
 !.env.example
 !.env.sample
 !.env.template
+# Local files (.env.local, .env.development.local, ...) hold one developer's
+# values: kis never shares them. Delete this line to share them encrypted.
+!.env*.local
 -- want/gitattributes --
 # >>> kis: generated from .gitencrypt, do not edit (run `kis sync`)
 .env filter=kis diff=kis merge=kis
@@ -127,6 +131,8 @@ A  AGENTS.md
 **/.env.sample/** !filter !diff !merge
 .env.template !filter !diff !merge
 **/.env.template/** !filter !diff !merge
+.env*.local !filter !diff !merge
+**/.env*.local/** !filter !diff !merge
 .gitencrypt !filter !diff !merge
 .gitattributes !filter !diff !merge
 .gitignore !filter !diff !merge

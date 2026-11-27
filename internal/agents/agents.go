@@ -28,6 +28,9 @@ is plaintext, git history and the remote only hold ciphertext.
 
 - Committing these files is safe and expected. Do not add them to ~.gitignore~,
   ~git rm~ them, or move their values elsewhere to "protect" them.
+- ~.env*.local~ files are local: never commit them; don't remove them from
+  ~.gitignore~. They hold one developer's values, so kis doesn't encrypt them
+  and blocks committing them in plaintext.
 - Before every push run ~kis status --check~; for a pull request,
   ~kis status --check --since origin/main~ (or the PR's base branch). ~--json~
   gives machine-readable output. It exits 1 and prints the fix if any secret

@@ -25,10 +25,10 @@ cmp .env $WORK/v3
 exec git checkout -- .env
 
 # Rename keeps it encrypted when the new name matches.
-exec git mv .env .env.local
+exec git mv .env .env.staging
 exec git commit -qm rename
-stored HEAD .env.local
-cmp .env.local $WORK/v2
+stored HEAD .env.staging
+cmp .env.staging $WORK/v2
 
 # Rebase and cherry-pick replay encrypted blobs.
 exec git switch -q -c other HEAD~1
@@ -46,13 +46,13 @@ cmp .env.production $WORK/v4
 mkdir sub
 cd sub
 exec kis status
-stdout '\.env\.local +encrypted in git'
+stdout '\.env\.staging +encrypted in git'
 cd ..
 
 # git log -p and git show print plaintext diffs.
 exec git log -p -1 -- .env.production
 stdout '^\+PROD=1$'
-exec git show HEAD~1:.env.local
+exec git show HEAD~1:.env.staging
 ! stdout 'DB='
 exec git status --porcelain
 ! stdout .

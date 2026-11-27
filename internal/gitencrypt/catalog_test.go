@@ -56,7 +56,7 @@ func TestCatalogMatches(t *testing.T) {
 		encrypted []string // must be encrypted
 		plain     []string // must stay readable
 	}{
-		{".env", ".env.*\n", []string{".env", ".env.production", "apps/api/.env", "apps/api/.env.production"}, []string{".env.example", "apps/api/.env.sample", "README.md"}},
+		{".env", ".env.*\n", []string{".env", ".env.production", "apps/api/.env", "apps/api/.env.production", ".env.local.bak", ".env.localhost", ".env.local.example"}, []string{".env.example", "apps/api/.env.sample", "README.md", ".env.local", "apps/api/.env.development.local"}},
 		{"Android", "*.jks\n", []string{"release.jks", "app/upload.keystore", "app/keystore.properties"}, []string{"app/build.gradle"}},
 		{"Rails", "**/config/master.key\n", []string{"config/master.key", "apps/web/config/master.key", "config/credentials/production.key", "apps/web/config/credentials/staging.key"}, []string{"config/credentials/production.yml.enc", "config/application.rb"}},
 		{"Spring (local)", "application-local.yml\n", []string{"src/main/resources/application-local.yml"}, []string{"src/main/resources/application.yml"}},

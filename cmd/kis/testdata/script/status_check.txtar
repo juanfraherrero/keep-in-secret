@@ -29,17 +29,17 @@ stdout '"problems": \[\]'
 
 # Plaintext staged (filter missing): unsafe, with the fix spelled out.
 exec git config --remove-section filter.kis
-cp $WORK/local .env.local
-exec git add .env.local
+cp $WORK/staging .env.staging
+exec git add .env.staging
 ! exec kis status --check
-stdout '\.env\.local +PLAINTEXT in index'
+stdout '\.env\.staging +PLAINTEXT in index'
 stdout 'safe to push +NO: fix the problems below'
-stdout '✗ \.env\.local: staged in plaintext'
+stdout '✗ \.env\.staging: staged in plaintext'
 stdout 'fix: kis sync'
 stdout '! git filters are not configured in this clone'
 exec kis status --json
 stdout '"safe_to_push": false'
-stdout '"severity": "error",\s+"path": ".env.local"'
+stdout '"severity": "error",\s+"path": ".env.staging"'
 stdout '"severity": "warning"'
 
 # Committed anyway, skipping the hook. The next commit encrypts it, so HEAD
@@ -47,14 +47,14 @@ stdout '"severity": "warning"'
 exec git commit -qm leak --no-verify
 exec kis unlock
 exec kis sync
-exec git commit -qm 'encrypt local env'
-stored HEAD .env.local
+exec git commit -qm 'encrypt staging env'
+stored HEAD .env.staging
 exec kis status --check
-stdout 'safe to push +yes: \.env, \.env\.local are encrypted in git'
+stdout 'safe to push +yes: \.env, \.env\.staging are encrypted in git'
 
 # ...but the pull request still contains the leaking commit.
 ! exec kis status --check --since base
-stdout '✗ \.env\.local @ [0-9a-f]{12}: a commit to be pushed stores it in plaintext'
+stdout '✗ \.env\.staging @ [0-9a-f]{12}: a commit to be pushed stores it in plaintext'
 stdout 'fix: rewrite that commit'
 ! exec kis status --since nope
 stderr 'unknown revision nope.*fetch-depth: 0'
@@ -104,7 +104,7 @@ exec kis status --check
 OLD=1
 -- app/.env --
 A=1
--- local --
+-- staging --
 LOCAL=1
 -- gitencrypt-extra --
 .env

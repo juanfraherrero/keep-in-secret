@@ -24,6 +24,24 @@ func TestBlock(t *testing.T) {
 	}
 }
 
+// TestIsLocal pins which names the local-file guard covers (#13): the names
+// DefaultContent excludes, at any depth, whatever their case.
+func TestIsLocal(t *testing.T) {
+	if !strings.Contains(DefaultContent, "\n!"+LocalPattern+"\n") {
+		t.Errorf("DefaultContent does not exclude %s:\n%s", LocalPattern, DefaultContent)
+	}
+	for p, want := range map[string]bool{
+		".env.local": true, ".env.development.local": true, ".env.test.local": true,
+		"apps/web/.env.local": true, ".env.LOCAL": true, "a/.Env.Production.Local": true,
+		".env": false, ".env.production": false, ".env.local.bak": false, ".env.localhost": false,
+		".env.local.example": false, "x.local": false, ".env.local/secret": false, "README.md": false,
+	} {
+		if got := IsLocal(p); got != want {
+			t.Errorf("IsLocal(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
 func TestMergeReplacesBlock(t *testing.T) {
 	attrs := "*.png binary\n"
 	once := Merge(attrs, Block(".env\n"))

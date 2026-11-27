@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -482,6 +483,76 @@ func (r *Repo) StagedPlaintext() ([]string, error) {
 		}
 	}
 	return bad, nil
+}
+
+// Local files (gitencrypt.IsLocal) hold one developer's values. The default
+// .gitencrypt excludes them, so when a project doesn't gitignore them, a
+// plain `git add .` would commit them in plaintext: these find that case.
+
+// localPlaintext returns the local files among paths that kis doesn't
+// encrypt (cached: per the staged .gitattributes) and whose blob at rev
+// (":" for the index) is plaintext. Files kis encrypts are left to the
+// secret checks, so nothing is reported twice.
+func (r *Repo) localPlaintext(paths []string, rev string, cached bool) ([]string, error) {
+	var local []string
+	for _, p := range paths {
+		if gitencrypt.IsLocal(p) {
+			local = append(local, p)
+		}
+	}
+	secrets, err := r.filterMatches(local, cached)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, p := range local {
+		if slices.Contains(secrets, p) {
+			continue
+		}
+		spec := rev + ":" + p
+		if rev == ":" {
+			spec = ":" + p
+		}
+		blob, err := gitx.RunInput(r.Root, nil, "cat-file", "blob", spec)
+		if err == nil && !crypt.IsEncrypted(blob) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// UntrackCommand is the git command that takes paths out of the index and
+// leaves them on disk. A path with a space is double-quoted, which every
+// shell (sh, PowerShell, cmd) reads the same way.
+func UntrackCommand(paths []string) string {
+	args := make([]string, len(paths))
+	for i, p := range paths {
+		if strings.ContainsAny(p, " \t") {
+			p = `"` + p + `"`
+		}
+		args[i] = p
+	}
+	return "git rm --cached -- " + strings.Join(args, " ")
+}
+
+// StagedLocalPlaintext lists staged local files the next commit would store
+// in plaintext.
+func (r *Repo) StagedLocalPlaintext() ([]string, error) {
+	out, err := gitx.RunInput(r.Root, nil, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR")
+	if err != nil {
+		return nil, err
+	}
+	return r.localPlaintext(gitx.SplitZ(out), ":", true)
+}
+
+// TrackedLocalPlaintext lists tracked local files stored in plaintext at rev
+// (":" for the index, "HEAD" for the last commit).
+func (r *Repo) TrackedLocalPlaintext(rev string) ([]string, error) {
+	files, err := r.lsFiles()
+	if err != nil {
+		return nil, err
+	}
+	return r.localPlaintext(files, rev, false)
 }
 
 // StagedWrongGroup lists staged secrets whose ciphertext was made with a

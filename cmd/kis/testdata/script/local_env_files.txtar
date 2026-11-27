@@ -1,0 +1,222 @@
+# .env*.local files hold one developer's values (#13). kis never shares them,
+# never touches .gitignore for them, and never lets them be committed in
+# plaintext.
+
+# 1-3. A Next.js-style app that gitignores its local files. kis init shares
+# .env and leaves the local files alone: not staged, not un-ignored.
+cd $WORK/next
+exec git init -q
+exec kis init -y --name owner
+stdout '✓ created \.gitencrypt \(\.env, \.env\.\* except examples and \.env\*\.local\)'
+stdout '! ignored by \.gitignore: \.env$'
+stdout '✓ staged encrypted: \.env$'
+! stdout '\.env\.local|development\.local'
+! stderr .
+grep '^!\.env\*\.local$' .gitencrypt
+stored : .env
+exec git ls-files
+! stdout '\.local'
+cmp .gitignore $WORK/want/next-gitignore
+
+# 2. What the default encrypts, root and nested. (.env.LOCAL depends on
+# core.ignorecase, so it is documented, not tested.)
+attr .env filter kis
+attr .env.production filter kis
+attr apps/web/.env filter kis
+attr .env.local filter unspecified
+attr .env.development.local filter unspecified
+attr .env.production.local filter unspecified
+attr .env.test.local filter unspecified
+attr apps/web/.env.local filter unspecified
+attr apps/web/.env.development.local filter unspecified
+attr .env.local.bak filter kis
+attr .env.localhost filter kis
+attr .env.example filter unspecified
+attr .env.local.example filter kis
+
+exec git commit -qm init
+exec kis status --check
+! stdout '\.local'
+
+# 4. A new local file later: kis sync stages nothing and keeps .gitignore.
+cp $WORK/local .env.test.local
+snapshot beforesync
+exec kis sync
+! stdout 'staged encrypted'
+! stdout '\.local'
+changed beforesync
+exec git status --porcelain
+! stdout '\.local'
+
+# 5. A Vite-style app that doesn't gitignore its local file.
+cd $WORK/vite
+exec git init -q
+exec kis init -y --name owner
+stdout '✓ staged encrypted: \.env$'
+! stdout '\.env\.local'
+exec git ls-files .env.local
+! stdout .
+exec git commit -qm init
+exec git branch base
+
+# Untracked, it is fine where it is: not reported.
+exec kis status --check
+! stdout '\.local'
+exec kis status --json
+! stdout 'env.local'
+
+# git add . stages it in plaintext, and the commit is blocked.
+exec git add .
+! stored : .env.local
+! exec git commit -qm leak
+stderr 'kis: commit blocked, these local files would be committed in PLAINTEXT:'
+stderr '^    \.env\.local$'
+stderr 'They match \.env\*\.local: kis doesn''t encrypt them and they aren''t gitignored\.'
+stderr 'To keep them on this machine, gitignore them and run `git rm --cached -- \.env\.local`\.'
+stderr 'To share them encrypted, remove "!\.env\*\.local" from \.gitencrypt and run `kis sync`\.'
+! exec kis status --check
+stdout 'safe to push +NO'
+stdout '✗ \.env\.local: a local file \(\.env\*\.local\) staged in plaintext'
+stdout 'fix: to keep it on this machine, gitignore it and run git rm --cached -- \.env\.local; to share it encrypted, remove "!\.env\*\.local" from \.gitencrypt and run kis sync$'
+exec kis status --json
+stdout '"safe_to_push": false'
+stdout '"severity": "error",\s+"path": ".env.local",\s+"message": "a local file'
+
+# 6. Committed anyway, skipping the hook: HEAD fails, and so does the PR.
+exec git commit -qm leak --no-verify
+! exec kis status --check
+stdout '✗ \.env\.local: a local file \(\.env\*\.local\) the last commit stores in plaintext'
+exec kis status --json
+stdout '"severity": "error",\s+"path": ".env.local",\s+"commit": "HEAD"'
+! exec kis status --check --since base
+stdout '✗ \.env\.local @ [0-9a-f]{12}: a commit to be pushed stores this local file \(\.env\*\.local\) in plaintext'
+
+# Gitignored and untracked: HEAD is safe again, the PR still holds the commit.
+cp $WORK/vite-gitignore .gitignore
+exec git rm -q --cached -- .env.local
+exec git add .gitignore
+exec git commit -qm 'keep .env.local local'
+exists .env.local
+exec kis status --check
+! stdout '\.local'
+! exec kis status --check --since base
+stdout '✗ \.env\.local @ [0-9a-f]{12}: a commit to be pushed stores this local file'
+
+# 7. A local file committed in plaintext before kis: kis init warns, and
+# status fails until it leaves the index.
+cd $WORK/legacy
+exec git init -q
+exec git add .
+exec git commit -qm 'before kis'
+exec kis init -y --name owner
+stdout '! local files tracked in PLAINTEXT: \.env\.local'
+stdout '! already committed before: \.env\.local \(old commits still contain them: rotate the values they hold\)'
+! exec kis status --check
+stdout '✗ \.env\.local: a local file \(\.env\*\.local\) the last commit stores in plaintext'
+exec git rm -q --cached -- .env.local
+exec kis status --check
+
+# 8. A team that shares its local files on purpose removes the exclusion:
+# kis sync un-ignores and encrypts them, and the guard doesn't fire.
+cd $WORK/next
+cp $WORK/gitencrypt-share .gitencrypt
+exec kis sync
+stdout '! ignored by \.gitignore: \.env\.development\.local, \.env\.local, \.env\.test\.local'
+stdout '✓ staged encrypted: \.env\.development\.local, \.env\.local, \.env\.test\.local'
+grep '^!/\.env\.local$' .gitignore
+stored : .env.local .env.test.local
+exec git commit -qm 'share local files'
+stored HEAD .env.local .env.test.local
+exec kis status --check
+! stdout '✗'
+
+# 9. A repository set up with the old default (.env.* only) keeps sharing
+# .env.local encrypted: nothing changes, the guard doesn't fire.
+cd $WORK/old
+exec git init -q
+cp $WORK/gitencrypt-old .gitencrypt
+exec kis init -y --name owner
+stdout '✓ staged encrypted: \.env, \.env\.local'
+exec git commit -qm init
+stored HEAD .env.local
+snapshot oldsync
+exec kis sync
+changed oldsync
+exec kis status --check
+stdout '\.env\.local +encrypted in git'
+! stdout '✗'
+
+# 10. Excluding local files later: kis sync takes .env.local out of
+# encryption (plaintext in the index), and the guard catches it.
+cp $WORK/gitencrypt-new .gitencrypt
+exec kis sync
+! stored : .env.local
+stdout '! local files tracked in PLAINTEXT: \.env\.local'
+! exec kis status --check
+stdout '✗ \.env\.local: a local file \(\.env\*\.local\) staged in plaintext'
+stdout 'git rm --cached -- \.env\.local'
+! exec git commit -qam 'exclude local files'
+stderr 'these local files would be committed in PLAINTEXT'
+exec git rm -q --cached -- .env.local
+cp $WORK/vite-gitignore .gitignore
+exec git add .gitignore
+exec git commit -qm 'exclude local files'
+exec kis status --check
+
+-- next/.gitignore --
+node_modules/
+.env
+.env*.local
+-- next/.env --
+API_KEY=shared
+-- next/.env.local --
+API_URL=http://localhost:3000
+-- next/.env.development.local --
+DEBUG=1
+-- next/.env.example --
+API_KEY=
+-- want/next-gitignore --
+node_modules/
+.env
+.env*.local
+
+# kis: committed encrypted, see .gitencrypt
+!/.env
+-- vite/.gitignore --
+node_modules/
+-- vite/.env --
+API_KEY=shared
+-- vite/.env.local --
+TOKEN=mine
+-- vite-gitignore --
+node_modules/
+.env.local
+-- legacy/README.md --
+hello
+-- legacy/.env.local --
+TOKEN=mine
+-- old/.env --
+API_KEY=shared
+-- old/.env.local --
+TOKEN=team
+-- local --
+LOCAL=1
+-- gitencrypt-share --
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+-- gitencrypt-old --
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+-- gitencrypt-new --
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env*.local
