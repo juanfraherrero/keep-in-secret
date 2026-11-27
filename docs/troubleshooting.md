@@ -195,6 +195,36 @@ path or drop it.
 **What to do:** give that machine its own key with `kis add NAME --new-key`
 and store the printed key as `KIS_PRIVATE_KEY`.
 
+### `kis add NAME --new-key` printed the key, but my pipe or log only got part of the output
+
+**Cause:** this is by design. With `--new-key`, stdout carries only the
+private key, on one line. The `✓ added` line, "shown once, saved nowhere" and
+the instructions go to stderr. At a terminal both appear as one block; piped,
+only the key reaches the next command, so it can go straight into the CI or
+agent platform's secret store without appearing in any output. A script that
+captures stdout gets the key and nothing else; one that captures stderr (or
+`2>&1`) gets the messages.
+
+**What to do:** pipe stdout into the platform's secret store as
+`KIS_PRIVATE_KEY`. The command depends on the platform; for example, with
+GitHub Actions and the GitHub CLI:
+`kis add ci --new-key | gh secret set KIS_PRIVATE_KEY`. Never redirect it into
+a file, a log or a chat.
+
+### A private key from `kis add --new-key` was printed where it shouldn't be
+
+**Cause:** the key reached a log, a file, a chat or an agent's transcript,
+for example because stdout wasn't piped into the secret store.
+
+**What to do:** replace it with `kis add NAME --new-key --force` and store the
+new key as that machine's `KIS_PRIVATE_KEY`, **then always run `kis rotate`**,
+and commit and push. `--force` alone isn't enough: the old key can still open
+the repository key from an older `.kis/keys/NAME.age` in the git history, and
+with it every current and future secret. Only `kis rotate` replaces the
+repository key. Partners run `kis unlock` after pulling. Secrets the leaked key
+could already decrypt stay readable to whoever has it: rotate the real
+credentials too.
+
 ## Access
 
 ### `none of your keys has access to this repository yet`
@@ -268,10 +298,16 @@ pushed.
 
 ### `refusing to store FILE in plaintext: repository is locked`
 
-**Cause:** `git add` of a secret file in a clone without the key. kis
-refuses, so the plaintext never reaches git.
+**Cause:** `git add` (or `git commit -a`, `git diff`) of a secret file that
+holds plaintext, in a clone without the key: a locked clone, or a fresh clone
+where `kis unlock` found no access (it sets git up anyway). kis refuses, so the
+plaintext never reaches git. Unchanged secret files are ciphertext and pass
+through, and other files are not affected.
 
-**What to do:** run `kis unlock`, then `git add` again.
+**What to do:** if you have access, run `kis unlock`, then `git add` again.
+If you don't, secret files can't be changed from this clone: put the file back
+with `git checkout -- FILE` (or delete it if it is new) and ask someone with
+access to make the change, or to add you (`kis add YOUR_NAME KEY`).
 
 ### `commit blocked, these files would be stored in PLAINTEXT`
 
@@ -290,11 +326,27 @@ the new patterns aren't encrypted yet.
 ### A clone without `kis unlock` committed `.env` in plaintext
 
 **Cause:** git only encrypts once kis is wired into a clone, which happens at
-`kis init` or a successful `kis unlock`. A fresh clone without a key (often a
-CI runner or a cloud agent) has neither the filter nor the pre-commit check.
-`kis status --check` reports the commit.
+`kis init` or `kis unlock`. A fresh clone where nobody ran `kis unlock` (often
+a CI runner or a cloud agent) has neither the filter nor the pre-commit check,
+so `git add .env` stores the plaintext. `kis status` warns about such a clone
+(`git filters are not configured in this clone`), and `kis status --check`
+reports the commit.
 
-_Not documented yet._
+**What to do:** run `kis unlock` in that clone, even without a key: when it
+says you have no access, git is still set up, and from then on `git add`
+refuses plaintext in secret files (`refusing to store FILE in plaintext`).
+Then:
+
+- Not pushed yet: drop that commit from your branch before pushing, and put
+  `.env` back with `git checkout -- .env`.
+- Pushed: the value is in the remote's history. Rotate the credentials in that
+  file, and have someone with access commit the encrypted version
+  (`kis status --check` then passes again). Rewriting git history is outside kis.
+
+A clone where nobody ever runs kis can't be protected from inside it. Run
+`kis status --check --since origin/main` in CI on every pull request (see the
+README's [workflow](../README.md#is-it-safe-to-push)): it fails when any
+commit to be merged stores a secret in plaintext.
 
 ## Merging
 

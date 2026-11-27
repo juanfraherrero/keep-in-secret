@@ -28,9 +28,10 @@ is plaintext, git history and the remote only hold ciphertext.
 
 - Committing these files is safe and expected. Do not add them to ~.gitignore~,
   ~git rm~ them, or move their values elsewhere to "protect" them.
-- Before every push or pull request run ~kis status --check~ (~--json~ for
-  machine-readable output). It exits 1 and prints the fix if any secret would
-  leave this machine in plaintext.
+- Before every push run ~kis status --check~; for a pull request,
+  ~kis status --check --since origin/main~ (or the PR's base branch). ~--json~
+  gives machine-readable output. It exits 1 and prints the fix if any secret
+  would leave this machine in plaintext.
 - To encrypt another file, add its path to ~.gitencrypt~ and run ~kis sync~.
   Common secret files per stack: [gitencrypt-patterns.md](https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md).
   Ask the developer when unsure: encrypting a file CI reads in plaintext breaks CI.
@@ -39,14 +40,21 @@ is plaintext, git history and the remote only hold ciphertext.
   or isn't in that file's group (~.gitencrypt~ lines ending in ~@GROUP~). That is
   expected: leave the file alone. ~kis unlock~ needs the developer's private key,
   or on CI and cloud agents the ~KIS_PRIVATE_KEY~ secret (~kis add NAME --new-key~).
+- In a fresh clone, run ~kis unlock~ first, even without a key: it sets git up
+  so secret files can't be committed in plaintext. If it says you have no
+  access, leave secret files alone and ask the developer.
+- Run ~kis add NAME --new-key~ only piped straight into the CI or agent
+  platform's secret store: its stdout is the private key alone, so you never
+  read it. If you can't pipe it there, ask the developer to run it.
 - Every kis command picks that key the same way, first match wins:
   ~--identity PATH~, then ~KIS_PRIVATE_KEY~ (the key itself; key files are
   ignored), then ~$KIS_IDENTITY~, ~$HOME/.config/kis/identity~,
   ~$HOME/.ssh/id_ed25519~, ~$HOME/.ssh/id_rsa~. ~kis pubkey~ shows which. If the key is elsewhere, pass
   ~--identity PATH~ (PATH is the developer's private key file: ask them, never
   guess or search for keys), or have them set ~KIS_IDENTITY=PATH~.
-- Do not copy secret values into code, logs, commit messages, pull requests or
-  chat unless the task requires it.
+- Never copy secret values into code, logs, commit messages, pull requests or
+  chat. If a task seems to need one, refer to the variable by name, or ask the
+  developer.
 `, "~", "`") + endMark + "\n"
 
 // Merge replaces the managed section in content, or appends it.

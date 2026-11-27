@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -97,6 +98,11 @@ func passphrasePrompt(path string) func() ([]byte, error) {
 	}
 }
 
-func step(format string, a ...any) { fmt.Printf("  ✓ "+format+"\n", a...) }
-func warn(format string, a ...any) { fmt.Printf("  ! "+format+"\n", a...) }
-func note(format string, a ...any) { fmt.Printf("  → "+format+"\n", a...) }
+// msgOut is where step, warn and note write: stdout, unless a command's
+// stdout carries data (kis add --new-key writes only the private key there,
+// so it can be piped straight into a secret store).
+var msgOut io.Writer = os.Stdout
+
+func step(format string, a ...any) { fmt.Fprintf(msgOut, "  ✓ "+format+"\n", a...) }
+func warn(format string, a ...any) { fmt.Fprintf(msgOut, "  ! "+format+"\n", a...) }
+func note(format string, a ...any) { fmt.Fprintf(msgOut, "  → "+format+"\n", a...) }

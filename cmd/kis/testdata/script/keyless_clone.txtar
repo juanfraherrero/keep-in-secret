@@ -1,0 +1,135 @@
+# A clone without access (a teammate not added yet, a cloud agent without
+# KIS_PRIVATE_KEY) runs `kis unlock`: it fails, but git is wired anyway, so
+# secret files can't be committed in plaintext from there. Everything else
+# (code, pulls, unchanged secrets) works as before.
+
+exec kis keygen
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git push -q $REMOTE HEAD:main
+
+# --- a clone with no key at all ---
+as agent
+! exists $KIS_KEY
+cd $WORK
+exec git clone -q $REMOTE agent
+cd agent
+encrypted .env
+
+# Before kis unlock, status warns (only warns) that git is not wired.
+exec kis status --check
+stdout 'state +LOCKED'
+stdout '! git filters are not configured in this clone'
+stdout 'fix: kis unlock \(sets git up even without access to the secrets\)'
+
+snapshot before-unlock
+! exec kis unlock
+stdout '✓ configured git filters and pre-commit check'
+stderr 'no key found on this machine'
+stderr 'git is set up so secret files can''t be committed in plaintext from this clone\.'
+changed before-unlock ~.git/config +.git/hooks/pre-commit
+grep 'process = .*filter-process' .git/config
+! exists .git/kis/key
+encrypted .env
+exec kis status --check
+stdout 'git filters +ok'
+stdout 'pre-commit +ok'
+! stdout '!'
+
+# Wiring changes nothing git sees.
+exec git status --porcelain
+! stdout .
+exec git diff --exit-code
+
+# Plaintext in a secret file is refused, edited or new; nothing is staged.
+cp $WORK/leak .env
+exec git status --porcelain
+stdout '^ M .env$'
+# git diff needs the same filter, so it refuses too until .env is restored.
+! exec git diff
+stderr 'refusing to store .env in plaintext'
+! exec git add .env
+stderr 'refusing to store .env in plaintext: repository is locked'
+stored : .env
+exec git diff --cached --exit-code
+cp $WORK/leak .env.staging
+! exec git add .env.staging
+stderr 'refusing to store .env.staging in plaintext: repository is locked'
+exec git ls-files .env.staging
+! stdout .
+! exec git commit -qam leak
+stored HEAD .env
+exec git checkout -- .env
+rm .env.staging
+encrypted .env
+
+# Code commits, pushes and pulls normally.
+cp $WORK/readme README.md
+exec git add README.md
+exec git commit -qm 'agent edits the readme'
+stored HEAD .env
+exec git push -q $REMOTE HEAD:main
+
+# --- the owner changes the secret meanwhile; the agent pulls it ---
+as owner
+cd $WORK/app
+exec git pull -q $REMOTE main
+cp $WORK/v2 .env
+exec git commit -qam 'new secret'
+exec git push -q $REMOTE HEAD:main
+
+as agent
+cd $WORK/agent
+cp $WORK/readme2 README.md
+exec git commit -qam 'agent edits again'
+exec git pull -q --no-rebase $REMOTE main
+encrypted .env
+stored HEAD .env
+exec git status --porcelain
+! stdout .
+exec git push -q $REMOTE HEAD:main
+
+# A bad KIS_PRIVATE_KEY fails the same way.
+env KIS_PRIVATE_KEY=not-a-key
+! exec kis unlock
+stderr 'KIS_PRIVATE_KEY: not an age or SSH private key'
+stderr 'git is set up so secret files can''t be committed in plaintext from this clone\.'
+env KIS_PRIVATE_KEY=
+
+# A key without access: same note, after the keys to send.
+exec kis keygen
+pubkey AGENT_KEY
+! exec kis unlock
+stderr 'none of your keys has access'
+stderr 'git is set up so secret files can''t be committed in plaintext from this clone\.'
+
+# --- once added, the same clone unlocks as usual ---
+as owner
+cd $WORK/app
+exec git pull -q $REMOTE main
+exec kis add agent $AGENT_KEY
+exec git commit -qm 'add agent'
+exec git push -q $REMOTE HEAD:main
+
+as agent
+cd $WORK/agent
+exec git pull -q $REMOTE main
+exec kis unlock
+stdout 'unlocked as agent'
+cmp .env $WORK/v2
+exec kis lock
+encrypted .env
+
+-- app/.env --
+API_KEY=dev-123
+-- leak --
+API_KEY=leaked-by-agent
+-- v2 --
+API_KEY=dev-456
+-- readme --
+edited by the agent
+-- readme2 --
+edited again

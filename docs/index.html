@@ -739,15 +739,19 @@ git clone … &amp;&amp; cd …
       <div class="card hov sc reveal">
         <span class="n">01 · UNLOCK</span>
         <h3>One variable, one command</h3>
-        <p>Store the agent's private key as the platform secret <code class="mono">KIS_PRIVATE_KEY</code>. While it is set it is the only key kis uses; key files are ignored. Commits, pulls and checkouts after the unlock need nothing else.</p>
-        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis unlock</span>   <span class="c"># unlocked as ci (key from KIS_PRIVATE_KEY)</span></pre></div>
+        <p>Store the agent's private key as the platform secret <code class="mono">KIS_PRIVATE_KEY</code>. <code class="mono">kis add NAME --new-key</code> writes only the key to stdout and every message to stderr, so it can be piped straight into the secret store without appearing in any output. The pipe target depends on the platform. While the secret is set it is the only key kis uses; key files are ignored. Commits, pulls and checkouts after the unlock need nothing else.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="c"># GitHub Actions only, with the GitHub CLI:</span>
+<span class="k">kis add</span> ci --new-key | gh secret set KIS_PRIVATE_KEY
+<span class="c"># in the job:</span>
+<span class="k">kis unlock</span>   <span class="c"># unlocked as ci (key from KIS_PRIVATE_KEY)</span></pre></div>
       </div>
       <div class="card hov sc reveal d1">
         <span class="n">02 · ONE PARTNER PER AGENT</span>
         <h3>A master agent hands out keys</h3>
-        <p>An unlocked person or agent creates one partner per agent. Each printed key goes straight into that agent's secret store, never into logs, commits or chat. Revoking one agent leaves the others working.</p>
-        <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">kis add</span> agent-1 --new-key
-<span class="k">kis add</span> agent-2 --new-key --group prod
+        <p>An unlocked person or agent creates one partner per agent, each <code class="mono">--new-key</code> piped straight into that agent's secret store, so an agent doing it never reads the keys; never into logs, commits or chat. An agent that can't pipe there asks a person to run it. Revoking one agent leaves the others working.</p>
+        <div class="code"><button class="copy" type="button">copy</button><pre><span class="c"># STORE: your platform's command that reads a secret from stdin</span>
+<span class="k">kis add</span> agent-1 --new-key | STORE
+<span class="k">kis add</span> agent-2 --new-key --group prod | STORE
 git commit -m "agent access" &amp;&amp; git push</pre></div>
       </div>
       <div class="card hov sc reveal d2">

@@ -234,8 +234,19 @@ group; to share it with more people, add them to that group. Without any
 A CI runner or a cloud agent (Codex, Claude Code on the web, Copilot coding
 agent…) starts from a fresh clone with no key, so its secret files stay
 ciphertext. Most jobs don't need more: building, testing code and
-`kis status --check` work locked. When a job needs the real values (a deploy,
-integration tests), make the machine a partner of its own:
+`kis status --check` work locked.
+
+A job or agent that may commit should still run `kis unlock` first, even with no
+key: it fails with "no key found" or "none of your keys has access", but sets
+git up anyway, so `git add` refuses a secret file holding plaintext
+(`refusing to store .env in plaintext: repository is locked`) instead of
+committing it. Unchanged secret files and all other files commit, pull and push
+as usual. A clone where nobody runs kis can't be protected from inside it; the
+`kis status --check --since` workflow [above](#is-it-safe-to-push) catches its
+commits in the pull request.
+
+When a job needs the real values (a deploy, integration tests), make the
+machine a partner of its own:
 
 ```sh
 kis add ci --new-key              # or: kis add deploy --new-key --group prod
@@ -243,8 +254,19 @@ git commit -m "ci access" && git push
 ```
 
 `--new-key` creates the key pair in memory and prints the private key once; it
-is saved nowhere. Store it as a `KIS_PRIVATE_KEY` secret on the platform, then
-unlock in the job or the agent's setup script:
+is saved nowhere. Store it as a `KIS_PRIVATE_KEY` secret on the platform.
+
+The private key is the only thing `--new-key` writes to stdout, on one line;
+the `✓ added` line and the instructions go to stderr. At a terminal you see
+both, as one block. Piped, the key goes straight into the platform's secret
+store without appearing in any output, log or scrollback. The pipe target
+depends on the platform; for example, with GitHub Actions and the GitHub CLI:
+
+```sh
+kis add ci --new-key | gh secret set KIS_PRIVATE_KEY    # GitHub Actions only
+```
+
+Then unlock in the job or the agent's setup script:
 
 ```yaml
 - run: curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
@@ -266,11 +288,13 @@ unlock in the job or the agent's setup script:
   init warns when its key is the only partner. Never let the only key live on a
   disposable machine: add a person (`kis add NAME KEY`) before pushing.
 - Several agents: an unlocked agent or person runs `kis add agent-1 --new-key`
-  once per agent, and each printed key goes straight into that agent's
-  `KIS_PRIVATE_KEY` secret. One agent can then be revoked
-  (`kis remove agent-1`) without touching the others.
+  once per agent, each piped straight into that agent's `KIS_PRIVATE_KEY`
+  secret, so an agent running it never reads the keys. One agent can then be
+  revoked (`kis remove agent-1`) without touching the others. An agent that
+  can't pipe into the platform's secret store asks you to run it instead.
 - `kis rotate` and removing other partners don't affect it. `kis remove ci`
-  revokes it; `kis add ci --new-key --force` replaces a lost or leaked key.
+  revokes it; `kis add ci --new-key --force` replaces a lost or leaked key
+  ([a key printed where it shouldn't be](docs/troubleshooting.md#a-private-key-from-kis-add---new-key-was-printed-where-it-shouldnt-be)).
 - Give each machine its own partner, in the narrowest group that works: a leak
   then costs one `kis remove` instead of your own key.
 
@@ -297,7 +321,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey [--identity PATH]` | Print the public keys kis uses here, and where each comes from |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G] [--identity PATH]` | Give someone access (to a group; omit the key for an existing partner) |
-| `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, for `KIS_PRIVATE_KEY` |
+| `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, alone on stdout, to pipe into `KIS_PRIVATE_KEY` |
 | `kis remove NAME [--group G] [--no-rotate]` | Revoke access and rotate the affected keys |
 | `kis rotate [--group G]` | New master key(s), re-encrypt those files |
 | `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook. Uses `KIS_PRIVATE_KEY` when set |
@@ -390,7 +414,10 @@ what kis suggests to new partners.
 - File names and sizes are visible, and anyone can see *when* an encrypted file
   changed (not what changed).
 - Secrets are only as safe as the least protected machine holding a key.
-- Without `kis unlock`, a clone just has ciphertext; nothing leaks.
+- Without `kis unlock`, a clone just has ciphertext, but git there doesn't
+  encrypt either: an edited or new secret file would be committed in plaintext.
+  Run `kis unlock` in every clone that may commit, even without a key; it sets
+  git up so that `git add` refuses instead.
 
 ## Development
 

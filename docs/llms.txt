@@ -30,6 +30,11 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
+- In a fresh clone, run `kis unlock` first, even without a key: it sets git up
+  so secret files can't be committed in plaintext (`git add` then refuses a
+  secret file holding plaintext: `refusing to store FILE in plaintext:
+  repository is locked`). If it says you have no access, leave secret files
+  alone and ask the developer.
 - Which private key kis uses, the same in every command (`init`, `unlock`,
   `pubkey`, and `sync` / `add` when they create a group); first match wins:
   1. `--identity PATH` (a private key file; only that file),
@@ -49,6 +54,11 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
   agents: one `kis add agent-N --new-key` per agent, each key in that agent's
   own secret, so one can be revoked alone. Never print those keys into logs,
   commits or chat.
+- `kis add NAME --new-key` writes only the private key, on one line, to stdout;
+  every message goes to stderr. Run it yourself only piped straight into the
+  platform's secret store (as `KIS_PRIVATE_KEY`), so you never read the key;
+  the command for that depends on the platform. If you can't pipe it there,
+  ask the developer to run it.
 - `kis init` with `KIS_PRIVATE_KEY` set uses that key as the first partner
   and writes no key file. Without a terminal it warns when its key is the only
   partner: tell the developer, and add them (`kis add NAME KEY`) before
@@ -57,7 +67,8 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
   for that group only. Files of a group this clone isn't in stay ciphertext:
   that is expected, commit around them; never try to decrypt or recreate them.
   Access: `kis add NAME --group GROUP` (run by a member of that group).
-- Don't copy secret values into code, logs, commit messages, PRs or chat.
+- Don't copy secret values into code, logs, commit messages, PRs or chat. If a
+  task seems to need one, refer to the variable by name, or ask the developer.
 
 ## Setting kis up (non-interactive)
 
@@ -70,7 +81,7 @@ kis init -y --name NAME              # creates .gitencrypt, key, AGENTS.md secti
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push
 kis unlock                           # partner, after cloning
-kis add ci --new-key [--group G]     # CI / cloud agent: store the printed key as KIS_PRIVATE_KEY
+kis add ci --new-key [--group G]     # CI / cloud agent: stdout is the key; pipe it into the secret KIS_PRIVATE_KEY
 KIS_PRIVATE_KEY=… kis unlock         # on that machine
 ```
 
