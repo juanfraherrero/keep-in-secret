@@ -30,6 +30,11 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
+- In a fresh clone, run `kis unlock` first, even without a key: it sets git up
+  so secret files can't be committed in plaintext (`git add` then refuses a
+  secret file holding plaintext: `refusing to store FILE in plaintext:
+  repository is locked`). If it says you have no access, leave secret files
+  alone and ask the developer.
 - Which private key kis uses, the same in every command (`init`, `unlock`,
   `pubkey`, and `sync` / `add` when they create a group); first match wins:
   1. `--identity PATH` (a private key file; only that file),

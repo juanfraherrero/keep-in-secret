@@ -29,7 +29,10 @@ encrypted .env
 ! exec kis unlock
 stderr 'none of your keys has access'
 stderr $PARTNER_KEY
+stderr 'git is set up so secret files can''t be committed in plaintext from this clone\.'
 ! exists .git/kis/key
+grep 'filter-process' .git/config
+exists .git/hooks/pre-commit
 
 # --- owner grants access ---
 as owner
@@ -52,7 +55,7 @@ exec git pull -q
 snapshot before-unlock
 exec kis unlock
 stdout '✓ unlocked as partner \(key .*identity\); decrypted 1 file\(s\)'
-changed before-unlock ~.env ~.git/config +.git/hooks/pre-commit +.git/kis/key
+changed before-unlock ~.env +.git/kis/key
 cmp .env $WORK/v1
 exec git status --porcelain
 ! stdout .
