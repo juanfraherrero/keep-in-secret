@@ -34,6 +34,24 @@ back.
 Don't run `kis init` again: it would replace the repository key and drop the
 partners listed in `.kis/recipients.toml`.
 
+### My name in the repository is wrong
+
+**Cause:** `kis init` used the part of your git email before the `@`, or a
+`--name` you want to change. There is no rename command.
+
+**What to do:** commit or stash your changes to secret files first (`kis remove`
+refuses otherwise). Then add yourself under the new name with your own public
+key (`kis pubkey` prints it), and remove the old name. The order matters: kis
+refuses to remove the last partner.
+
+```sh
+kis add NEW_NAME YOUR_PUBLIC_KEY
+kis remove OLD_NAME
+```
+
+Commit and push. Removing a name rotates the repository key, so if there are
+other partners, each one runs `kis unlock` after pulling.
+
 ### `unsupported key type "ecdsa-…"` or `"sk-…"`
 
 **Cause:** age, which kis uses to share the repository key, can only encrypt

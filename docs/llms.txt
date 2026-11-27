@@ -52,6 +52,8 @@ Every prompt takes its default without a terminal; `-y` forces it.
 
 ```sh
 kis init -y --name NAME              # creates .gitencrypt, key, AGENTS.md section
+                                     # NAME: how partners will see the developer (committed);
+                                     # without --name, the git email before the @ is used
 kis init -y --name NAME --preset terraform,android
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push

@@ -109,6 +109,12 @@ git commit -m "Set up kis encryption" && git push
 matching files, offers to un-ignore `.env` from `.gitignore`, adds the kis section
 to `AGENTS.md`, and prints the instructions to send to partners.
 
+`--name` is how partners will see you: it is committed in `.kis/recipients.toml`
+and names your key file, `.kis/keys/NAME.age`. Without it, kis suggests the part
+of your git email before the `@` (asking you to confirm when there is a terminal,
+using it as is when there isn't). To change it later, see
+[troubleshooting](docs/troubleshooting.md#my-name-in-the-repository-is-wrong).
+
 ## Onboarding a partner
 
 1. **Partner** installs kis and creates a key:
