@@ -14,8 +14,8 @@ kis status --check  # before every push or PR: exits 1 if a secret would leak
 ```
 
 Works with any language: kis encrypts files by path, whatever they hold.
-`.env` is the default; [presets](#other-stacks-presets) cover keystores,
-Terraform variables, Rails and Spring. Built to be driven by coding agents too:
+`.env` is the default; [other stacks](#other-stacks) list their own secret
+files (keystores, Terraform variables, Rails keys…). Built to be driven by coding agents too:
 [see below](#coding-agents).
 
 **Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
@@ -184,30 +184,24 @@ jobs:
 That check needs no key. To let CI read the secrets, see
 [CI and cloud agents](#ci-and-cloud-agents).
 
-## Other stacks (presets)
+## Other stacks
 
-kis does not care what is inside a file; `.gitencrypt` decides. Not every
-ecosystem keeps secrets in `.env`, so `kis init` detects common stacks and
-offers a preset (without a terminal it prints the command instead, because
-encrypting files your CI reads in plaintext must be a deliberate choice):
+kis does not care what is inside a file; `.gitencrypt` decides. Go, Rust,
+Python, Node, PHP and Ruby projects usually load `.env` (godotenv, dotenvy,
+python-dotenv, dotenv…), which the default covers. Other ecosystems keep
+secrets elsewhere: signing keystores, Rails master keys, Terraform variables.
+Look at your project, add those paths to `.gitencrypt`, and run `kis sync`:
 
-```sh
-kis init --preset terraform,android   # at setup
-kis sync --preset spring              # or any time later
+```
+*.jks
+**/config/master.key
 ```
 
-| Preset | Encrypts | Detected by |
-|---|---|---|
-| `android` | `*.jks`, `*.keystore`, `keystore.properties` | `*/src/main/AndroidManifest.xml` |
-| `rails` | `config/master.key`, `config/credentials/*.key` | `config/application.rb` |
-| `spring` | `application-local.{properties,yml,yaml}` | `pom.xml`, `build.gradle(.kts)` |
-| `terraform` | `*.tfvars`, `*.tfvars.json` (not `*.tfvars.example`) | `*.tf` |
-
-Go, Rust, Python, Node, PHP and Ruby projects usually load `.env` (godotenv,
-dotenvy, python-dotenv, dotenv…), which the default covers. Anything else, such
-as `config/secrets.json` or `appsettings.Development.json`, is one line in
-`.gitencrypt` plus `kis sync`. Binary files (keystores, certificates) work too;
-they just can't be merged line by line.
+[docs/gitencrypt-patterns.md](docs/gitencrypt-patterns.md) lists the common
+ones per stack, ready to copy, with why each is secret and what it means for CI
+(a file CI reads in plaintext needs `kis unlock` there once it is encrypted).
+Binary files (keystores, certificates) work too; they just can't be merged line
+by line.
 
 ## Groups: secrets for some people only
 
@@ -290,7 +284,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 
 | Command | What it does |
 |---|---|
-| `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
+| `kis init [--identity PATH] [--name NAME] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
@@ -300,7 +294,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | `kis unlock [--identity PATH]` | Decrypt after cloning; wires git filters and hook. Uses `KIS_PRIVATE_KEY` when set |
 | `kis lock [--force]` | Forget the key here and turn files back into ciphertext |
 | `kis status [--check] [--json] [--since REV]` | State, partners, encrypted files, and whether it is safe to push |
-| `kis sync [--preset LIST]` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
+| `kis sync` | Apply `.gitencrypt` edits to `.gitattributes` and re-encrypt |
 
 ## Keys
 

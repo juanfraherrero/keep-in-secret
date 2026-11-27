@@ -337,7 +337,7 @@ internal/
   agents/           the kis section of AGENTS.md / CLAUDE.md
   crypt/            deterministic AES-256-GCM (SIV-style), file format, v1 fixture
   filter/           clean/smudge rules and the pkt-line filter protocol
-  gitencrypt/       .gitencrypt → .gitattributes managed block, stack presets
+  gitencrypt/       .gitencrypt → .gitattributes managed block
   keys/             age/SSH identities, recipients, github:USER, wrap/unwrap
   repo/             .kis/ state, key cache, file discovery, git wiring and hook,
                     the "safe to push" audit behind `kis status`
