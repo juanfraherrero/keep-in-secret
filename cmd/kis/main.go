@@ -34,7 +34,7 @@ func init() {
 	commands = []command{
 		{name: "init", usage: "init [--identity PATH] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
-		{name: "pubkey", usage: "pubkey", summary: "Print the public keys found on this machine", run: cmdPubkey},
+		{name: "pubkey", usage: "pubkey [--identity PATH]", summary: "Print the public keys kis uses here, and where each comes from", run: cmdPubkey},
 		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd,
 			help: "KEY is the partner's public key, in any of these forms:\n" +
 				"  age1…              an age key; they create one with `kis keygen`\n" +
@@ -42,7 +42,8 @@ func init() {
 				"  github:USER        every ed25519/RSA key on that GitHub account\n" +
 				"  FILE.pub           a file with one or more public keys\n" +
 				"Several KEYs can be given. Without KEY, NAME must already be a partner (use with --group).\n" +
-				"--new-key creates the key pair instead, for CI and cloud agents."},
+				"--new-key creates the key pair instead, for CI and cloud agents.\n" +
+				"--identity PATH is your own private key, used when --group creates a new group."},
 		{name: "remove", usage: "remove NAME [--group G] [--no-rotate]", summary: "Revoke access and rotate the affected keys", run: cmdRemove},
 		{name: "rotate", usage: "rotate [--group G]", summary: "Replace the key(s) and re-encrypt", run: cmdRotate},
 		{name: "unlock", usage: "unlock [--identity PATH]", summary: "Get access after cloning: decrypts the files", run: cmdUnlock},
@@ -109,6 +110,15 @@ func parseFlags(fs *flag.FlagSet, args []string) []string {
 		pos = append(pos, args[0])
 		args = args[1:]
 	}
+}
+
+// identityPath is the running command's --identity flag. Every command that
+// needs your private key passes it to keys.Resolve, so they all agree on who
+// you are.
+var identityPath string
+
+func identityFlag(fs *flag.FlagSet) {
+	fs.StringVar(&identityPath, "identity", "", "your private key file (age or SSH); wins over KIS_PRIVATE_KEY and the default locations")
 }
 
 func newFlags(name string) *flag.FlagSet {

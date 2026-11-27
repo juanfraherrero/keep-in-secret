@@ -221,9 +221,25 @@ Each person brings one private key:
 | age X25519 | `kis keygen` → `~/.config/kis/identity` (Windows: `%APPDATA%\kis\identity`) | Recommended; file mode `0600` |
 | SSH ed25519 / RSA | `~/.ssh/id_ed25519`, `~/.ssh/id_rsa` | Read directly; no ssh-agent. Passphrases are prompted for at unlock |
 
-Lookup order: `$KIS_IDENTITY`, the kis age identity, `id_ed25519`, then `id_rsa`.
-`--identity PATH` (on `init` and `unlock`) skips the lookup and uses only that
-private key file. The path is not stored anywhere; only the public key is
+**One key rule** (`keys.Resolve`). Every command that needs your private key
+(`init`, `unlock`, `pubkey`, and `sync` / `add` when they create a group;
+`status` uses it too, without the flag) calls the same function, so given the
+same flags and environment they all identify you the same way. First match wins:
+
+| # | Source | Holds | Uses |
+|---|---|---|---|
+| 1 | `--identity PATH` | a path to a private key file | only that file |
+| 2 | `KIS_PRIVATE_KEY` | the key's text (age, or SSH without a passphrase) | only that key; key files are ignored |
+| 3 | default locations | paths | `$KIS_IDENTITY`, then `~/.config/kis/identity` (Windows `%APPDATA%\kis\identity`), `~/.ssh/id_ed25519`, `~/.ssh/id_rsa` |
+
+A source that is set but unusable (missing file, a variable that isn't a key)
+is an error and never falls through to the next step. Commands report the
+source (`unlocked as ci (key from KIS_PRIVATE_KEY)`, `(key from --identity
+PATH)`, `(key /home/ana/.ssh/id_ed25519)`); `kis pubkey` prints each key with its
+source. `kis init` follows the rule too: with `--identity` or
+`KIS_PRIVATE_KEY` it uses that key as the first partner (and with the
+variable writes no key file); otherwise it offers the default-location keys
+or a new age key. Paths are not stored anywhere; only the public key is
 ([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)).
 Only age X25519, SSH ed25519 and SSH RSA keys are accepted (`keys.ParseRecipient`).
 ECDSA, `sk-` (security key) and DSA keys are rejected, because age can't encrypt
@@ -269,7 +285,7 @@ group the first time `.gitencrypt` names it, with you as its member.
 
 ### Unlock
 
-`kis unlock` loads every identity it can find, tries each `.kis/keys/*.age`
+`kis unlock` loads the identities the key rule selects, tries each `.kis/keys/*.age`
 (and each group's folder), and on success:
 
 1. caches the raw master keys at `.git/kis/key` and `.git/kis/groups/GROUP`
@@ -338,7 +354,7 @@ internal/
   crypt/            deterministic AES-256-GCM (SIV-style), file format, v1 fixture
   filter/           clean/smudge rules and the pkt-line filter protocol
   gitencrypt/       .gitencrypt → .gitattributes managed block, stack presets
-  keys/             age/SSH identities, recipients, github:USER, wrap/unwrap
+  keys/             age/SSH identities, the key rule (Resolve), recipients, github:USER, wrap/unwrap
   repo/             .kis/ state, key cache, file discovery, git wiring and hook,
                     the "safe to push" audit behind `kis status`
   gitx/             git exec helpers and the git version check

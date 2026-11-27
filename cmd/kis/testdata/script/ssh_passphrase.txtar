@@ -24,7 +24,7 @@ encrypted .env
 ttyin -stdin $WORK/right
 exec kis unlock
 stderr -count=1 'Passphrase for'
-stdout 'unlocked as owner; decrypted 1 file\(s\)'
+stdout 'unlocked as owner \(key .*id_ed25519\); decrypted 1 file\(s\)'
 cmp .env $WORK/env
 
 # After unlocking, everyday git never asks again (no terminal attached here).

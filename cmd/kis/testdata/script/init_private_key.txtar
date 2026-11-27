@@ -1,0 +1,67 @@
+# A cloud agent runs the first kis init itself. Its only key is the
+# KIS_PRIVATE_KEY secret: init uses it as the first partner (the same key the
+# other commands use), writes no key file, and can create @groups because
+# group creation and init agree on who it is. With no terminal and a single
+# partner, init warns that losing that key locks everyone out.
+
+# The agent's key was made elsewhere and only reaches it as a variable.
+as keymaker
+exec kis keygen
+readvar AGENT_KEY $KIS_KEY 'AGE-SECRET-KEY-1[0-9A-Z]+'
+
+as agent
+env KIS_PRIVATE_KEY=$AGENT_KEY
+cd app
+exec git init -q
+exec kis init -y --name agent
+stdout 'encrypted for agent \(age key from KIS_PRIVATE_KEY\)'
+stdout 'created group prod with you \(agent\) as its member'
+! stdout 'created your key'
+! exists $KIS_KEY
+nowhere AGENT_KEY $WORK/app $HOME
+grep '^agent = \["age1' .kis/recipients.toml
+exists .kis/keys/agent.age
+exists .kis/keys/prod/agent.age
+grep 'Secrets are committed encrypted \(kis\)' AGENTS.md
+stored : .env .env.prod
+
+# The warning: the platform secret is the only way in.
+stdout '! The only key that can unlock this repository is the one in KIS_PRIVATE_KEY\.'
+stdout '! If it is lost \(this machine destroyed, the platform secret deleted\), nobody can unlock it again\.'
+stdout '! Add another partner \(`kis add NAME KEY`\) before pushing\.'
+
+exec kis status
+stdout '^you +agent \(key KIS_PRIVATE_KEY\)$'
+exec kis status --check
+
+# The fix the warning names: a second partner, here the person in charge.
+as owner
+env KIS_PRIVATE_KEY=
+exec kis keygen
+pubkey OWNER
+as agent
+env KIS_PRIVATE_KEY=$AGENT_KEY
+exec kis add owner $OWNER --group default,prod
+exec git add .
+exec git commit -qm 'kis setup'
+exec git push -q $REMOTE HEAD:main
+
+# The VM is gone; the person can still get in.
+as owner
+cd $WORK
+exec git clone -q $REMOTE owner
+cd owner
+env KIS_PRIVATE_KEY=
+exec kis unlock
+stdout 'unlocked as owner \(key .*identity\) \(groups: default, prod\)'
+cmp .env.prod $WORK/app/.env.prod
+
+-- app/.env --
+API_KEY=dev-123
+-- app/.env.prod --
+DB_PASSWORD=prod-secret
+-- app/.gitencrypt --
+.env
+.env.*
+!.env.example
+.env.prod @prod

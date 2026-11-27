@@ -105,11 +105,11 @@ env KIS_PRIVATE_KEY=$CI_KEY
 exec kis unlock
 stdout 'unlocked as ci \(key from KIS_PRIVATE_KEY\)'
 exec kis unlock --identity $KIS_KEY
-stdout 'unlocked as owner \(groups: default, prod, staging\)'
+stdout 'unlocked as owner \(key from --identity .*identity\) \(groups: default, prod, staging\)'
 ! stdout 'KIS_PRIVATE_KEY'
 env KIS_PRIVATE_KEY=
 exec kis unlock
-stdout 'unlocked as owner \(groups: default, prod, staging\)'
+stdout 'unlocked as owner \(key .*identity\) \(groups: default, prod, staging\)'
 
 # Rotating keys doesn't break the bots: the same secret keeps working.
 exec kis rotate

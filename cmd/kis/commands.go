@@ -40,7 +40,7 @@ func openInitialized() (*repo.Repo, error) {
 
 func cmdInit(args []string) error {
 	fs := newFlags("init")
-	identity := fs.String("identity", "", "private key file to use (age or SSH)")
+	identityFlag(fs)
 	name := fs.String("name", "", "your name in the recipients list")
 	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	noAgents := fs.Bool("no-agents", false, "don't add the kis section to AGENTS.md (read by coding agents)")
@@ -71,10 +71,11 @@ func cmdInit(args []string) error {
 	}
 
 	fmt.Println("Setting up kis encryption in", r.Root)
-	keyPath, pub, keyType, err := chooseIdentity(*identity)
+	key, err := chooseIdentity()
 	if err != nil {
-		return identityError(err, keyPath)
+		return identityError(err, key.Path)
 	}
+	pub, keyType := key.Pub, key.Type
 	// Only age, ssh-ed25519 and ssh-rsa keys can receive the repository key.
 	// Check before writing anything, so an ECDSA or sk- key leaves no files.
 	if _, err := keys.ParseRecipient(pub); err != nil {
@@ -117,7 +118,7 @@ func cmdInit(args []string) error {
 	if err := r.SaveConfig(repo.Config{Version: 1, DefaultKey: keyType}); err != nil {
 		return err
 	}
-	step("created repository key, encrypted for %s (%s key %s)", me, keyType, keyPath)
+	step("created repository key, encrypted for %s (%s %s)", me, keyType, key.Describe())
 
 	if err := wireGit(r); err != nil {
 		return err
@@ -163,6 +164,7 @@ func cmdInit(args []string) error {
 	if secrets, _ := r.TrackedSecrets(); len(secrets) > 0 {
 		step("encrypted files: %s", strings.Join(secrets, ", "))
 	}
+	warnOnlyKey(r, key)
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Check what is encrypted:   kis status")
@@ -170,6 +172,25 @@ func cmdInit(args []string) error {
 	fmt.Println("  3. Give partners access:      kis add NAME KEY   (key formats: kis add -h)")
 	fmt.Println("  4. Partners clone and run:    kis unlock")
 	return nil
+}
+
+// warnOnlyKey warns when init ran without a terminal (a coding agent, CI) and
+// its key is still the only partner: that machine or platform secret is often
+// disposable, and losing it locks everyone out for good.
+func warnOnlyKey(r *repo.Repo, key keys.Key) {
+	if hasTerminal() {
+		return
+	}
+	if rs, err := r.LoadRecipients(); err != nil || len(rs) != 1 {
+		return
+	}
+	src := key.Path
+	if src == "" {
+		src = "the one in " + keys.EnvPrivateKey
+	}
+	warn("The only key that can unlock this repository is %s.", src)
+	warn("If it is lost (this machine destroyed, the platform secret deleted), nobody can unlock it again.")
+	warn("Add another partner (`kis add NAME KEY`) before pushing.")
 }
 
 // identityError adds what to do when your own key file can't be opened.
@@ -292,12 +313,23 @@ func ensureGroups(r *repo.Repo) error {
 	return nil
 }
 
-func chooseIdentity(explicit string) (path, pub, keyType string, err error) {
-	if explicit != "" {
-		pub, err = keys.PublicKey(explicit)
-		return explicit, pub, keys.RecipientType(pub), err
+// chooseIdentity picks init's key with the same rule as every command
+// (keys.Resolve). --identity and KIS_PRIVATE_KEY are used as they are, and
+// KIS_PRIVATE_KEY writes no key file. Otherwise you choose among the keys in
+// the default locations, or create a new age key.
+func chooseIdentity() (keys.Key, error) {
+	res, err := keys.Resolve(identityPath)
+	if err != nil {
+		var k keys.Key
+		if len(res.Keys) > 0 {
+			k = res.Keys[len(res.Keys)-1]
+		}
+		return k, err
 	}
-	cands := keys.Candidates()
+	if res.From != keys.FromDefaults {
+		return res.Keys[0], nil
+	}
+	cands := res.Keys
 
 	options := make([]string, 0, len(cands)+1)
 	def := len(cands) // "create new" unless an age key exists
@@ -310,23 +342,19 @@ func chooseIdentity(explicit string) (path, pub, keyType string, err error) {
 	options = append(options, "Create a new kis key (recommended)")
 	pick := choose("Which key do you want to use to unlock this repository?", options, def)
 	if pick < len(cands) {
-		c := cands[pick]
-		pub, err = keys.PublicKey(c.Path)
-		if err == nil {
-			_, err = keys.ParseRecipient(pub)
-		}
-		return c.Path, pub, c.Type, err
+		return cands[pick], cands[pick].Err
 	}
-	path = keys.DefaultAgeIdentityPath()
+	path := keys.DefaultAgeIdentityPath()
+	k := keys.Key{Path: path, Type: keys.TypeAge}
 	if _, statErr := os.Stat(path); statErr == nil {
-		pub, err = keys.PublicKey(path)
-		return path, pub, keys.TypeAge, err
+		k.Pub, err = keys.PublicKey(path)
+		return k, err
 	}
-	pub, err = keys.Generate(path)
+	k.Pub, err = keys.Generate(path)
 	if err == nil {
 		step("created your key at %s (keep it private, back it up)", path)
 	}
-	return path, pub, keys.TypeAge, err
+	return k, err
 }
 
 func defaultName(r *repo.Repo) string {
@@ -532,24 +560,41 @@ func printKeygenNext(pub string) {
 	fmt.Println("  3. You pull (or clone) and run:  kis unlock")
 }
 
-func cmdPubkey([]string) error {
-	if _, pub, ok, err := keys.EnvIdentity(); err != nil {
+// cmdPubkey prints the public keys the key rule selects here, each with its
+// source, so "which key is kis using?" has one answer.
+func cmdPubkey(args []string) error {
+	fs := newFlags("pubkey")
+	identityFlag(fs)
+	if pos := parseFlags(fs, args); len(pos) > 0 {
+		return fmt.Errorf("unexpected argument %q", pos[0])
+	}
+	res, err := keys.Resolve(identityPath)
+	if err != nil {
 		return err
-	} else if ok {
-		fmt.Printf("# %s (%s); key files are ignored while it is set\n%s\n", keys.EnvPrivateKey, keys.RecipientType(pub), pub)
+	}
+	switch res.From {
+	case keys.FromEnv:
+		k := res.Keys[0]
+		fmt.Printf("# %s (%s); key files are ignored while it is set\n%s\n", keys.EnvPrivateKey, k.Type, k.Pub)
+		return nil
+	case keys.FromFlag:
+		k := res.Keys[0]
+		fmt.Printf("# %s (%s, from --identity); other keys are ignored\n%s\n", k.Path, k.Type, k.Pub)
 		return nil
 	}
-	cands := keys.Candidates()
-	if len(cands) == 0 {
+	if len(res.Keys) == 0 {
 		return errors.New("no keys found: run `kis keygen`")
 	}
-	for _, c := range cands {
-		pub, err := keys.PublicKey(c.Path)
-		if err != nil {
-			warn("%s: %v", c.Path, err)
+	for _, k := range res.Keys {
+		if k.Err != nil {
+			warn("%s: %v", k.Path, k.Err)
 			continue
 		}
-		fmt.Printf("# %s (%s)\n%s\n", c.Path, c.Type, pub)
+		from := ""
+		if k.Label != "" {
+			from = ", from " + k.Label
+		}
+		fmt.Printf("# %s (%s%s)\n%s\n", k.Path, k.Type, from, k.Pub)
 	}
 	return nil
 }
@@ -561,6 +606,7 @@ func cmdAdd(args []string) error {
 	force := fs.Bool("force", false, "replace the keys of an existing partner")
 	groupFlag := fs.String("group", "", "groups to add them to, comma-separated (default: the default group)")
 	newKey := fs.Bool("new-key", false, "create their key pair now and print the private key once (for CI and cloud agents)")
+	identityFlag(fs)
 	pos := parseFlags(fs, args)
 	if len(pos) < 1 {
 		fs.Usage()
@@ -723,31 +769,42 @@ func whoAmI(rs repo.Recipients) (string, error) {
 	return name, err
 }
 
-// identify is whoAmI plus where that key comes from: its file, or
-// KIS_PRIVATE_KEY.
-func identify(rs repo.Recipients) (name, source string, err error) {
-	mine := map[string]string{} // public key → source
-	if _, pub, ok, err := keys.EnvIdentity(); err != nil {
-		return "", "", err
-	} else if ok {
-		mine[normalizeKey(pub)] = keys.EnvPrivateKey
-	} else {
-		for _, c := range keys.Candidates() {
-			if pub, err := keys.PublicKey(c.Path); err == nil {
-				if _, seen := mine[normalizeKey(pub)]; !seen {
-					mine[normalizeKey(pub)] = c.Path
+// notPartnerError: the key rule worked, but no partner holds the key(s).
+type notPartnerError string
+
+func (e notPartnerError) Error() string { return string(e) }
+
+// identify is whoAmI plus the key that proves it, found with the key rule
+// (keys.Resolve) and the running command's --identity.
+func identify(rs repo.Recipients) (name string, key keys.Key, err error) {
+	res, err := keys.Resolve(identityPath)
+	if err != nil {
+		return "", keys.Key{}, err
+	}
+	if name, key, ok := partnerOf(rs, res.Keys); ok {
+		return name, key, nil
+	}
+	switch res.From {
+	case keys.FromEnv:
+		return "", keys.Key{}, notPartnerError("the key in " + keys.EnvPrivateKey + " belongs to no partner (see `kis pubkey` and `kis status`)")
+	case keys.FromFlag:
+		return "", keys.Key{}, notPartnerError("the key from --identity " + identityPath + " belongs to no partner (see `kis status`)")
+	}
+	return "", keys.Key{}, notPartnerError("none of this machine's keys belongs to a partner (see `kis pubkey` and `kis status`)")
+}
+
+// partnerOf finds the first partner (by name) holding one of ks.
+func partnerOf(rs repo.Recipients, ks []keys.Key) (string, keys.Key, bool) {
+	for _, n := range rs.Names() {
+		for _, pub := range rs[n] {
+			for _, k := range ks {
+				if k.Err == nil && normalizeKey(k.Pub) == normalizeKey(pub) {
+					return n, k, true
 				}
 			}
 		}
 	}
-	for _, n := range rs.Names() {
-		for _, pub := range rs[n] {
-			if src, ok := mine[normalizeKey(pub)]; ok {
-				return n, src, nil
-			}
-		}
-	}
-	return "", "", errors.New("none of this machine's keys belongs to a partner (see `kis pubkey` and `kis status`)")
+	return "", keys.Key{}, false
 }
 
 // normalizeKey drops an SSH key's comment so the same key always compares equal.
@@ -954,7 +1011,7 @@ func readable(r *repo.Repo) (ok []string, locked map[string][]string, err error)
 
 func cmdUnlock(args []string) error {
 	fs := newFlags("unlock")
-	identity := fs.String("identity", "", "private key file to use (age or SSH)")
+	identityFlag(fs)
 	parseFlags(fs, args)
 	if err := gitx.CheckVersion(); err != nil {
 		return err
@@ -964,31 +1021,30 @@ func cmdUnlock(args []string) error {
 		return err
 	}
 
-	var paths []string
-	var ids []age.Identity
-	envID, envPub, fromEnv, err := keys.EnvIdentity()
-	switch {
-	case *identity != "":
-		paths, fromEnv = []string{*identity}, false
-	case err != nil:
+	res, err := keys.Resolve(identityPath)
+	if err != nil {
 		return err
-	case fromEnv:
-		ids = []age.Identity{envID}
-	default:
-		for _, c := range keys.Candidates() {
-			paths = append(paths, c.Path)
-		}
 	}
-	if len(paths) == 0 && !fromEnv {
+	if len(res.Keys) == 0 {
 		return errors.New("no key found on this machine.\n  Run `kis keygen`, send the printed public key to someone with access,\n  and run `kis unlock` again once they have added you")
 	}
-	for _, p := range paths {
-		id, err := keys.LoadIdentity(p, passphrasePrompt(p))
+	var ids []age.Identity
+	var loaded []keys.Key
+	for _, k := range res.Keys {
+		if k.Err != nil {
+			warn("skipping %v", k.Err)
+			continue
+		}
+		id, err := k.Identity(passphrasePrompt(k.Path))
 		if err != nil {
+			if res.From == keys.FromFlag {
+				return err
+			}
 			warn("skipping %v", err)
 			continue
 		}
 		ids = append(ids, id)
+		loaded = append(loaded, k)
 	}
 	masters, name, err := r.UnwrapKeys(ids)
 	if err != nil && !errors.Is(err, repo.ErrNoAccess) {
@@ -1000,12 +1056,14 @@ func cmdUnlock(args []string) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kis: none of your keys has access to this repository yet.")
 		fmt.Fprintln(os.Stderr, "Send one of these public keys to someone with access and ask them to run `kis add YOUR_NAME KEY`:")
-		if fromEnv {
-			fmt.Fprintf(os.Stderr, "    %s  (from %s)\n", envPub, keys.EnvPrivateKey)
-		}
-		for _, p := range paths {
-			if pub, err := keys.PublicKey(p); err == nil {
-				fmt.Fprintf(os.Stderr, "    %s\n", pub)
+		for _, k := range res.Keys {
+			if k.Err != nil {
+				continue
+			}
+			if k.Path == "" {
+				fmt.Fprintf(os.Stderr, "    %s  (from %s)\n", k.Pub, keys.EnvPrivateKey)
+			} else {
+				fmt.Fprintf(os.Stderr, "    %s\n", k.Pub)
 			}
 		}
 		return exitError{}
@@ -1044,8 +1102,10 @@ func cmdUnlock(args []string) error {
 		return err
 	}
 	who := name
-	if fromEnv {
-		who += " (key from " + keys.EnvPrivateKey + ")"
+	if rs, err := r.LoadRecipients(); err == nil {
+		if _, k, ok := partnerOf(repo.Recipients{name: rs[name]}, loaded); ok {
+			who += " (" + k.Describe() + ")"
+		}
 	}
 	if len(r.Groups()) == 1 {
 		step("unlocked as %s; decrypted %d file(s)", who, n)
@@ -1198,7 +1258,15 @@ func collectStatus(since string) (statusJSON, error) {
 		Files:       audit.Files,
 		Problems:    audit.Problems,
 	}
-	st.You, st.YourKey, _ = identify(rs)
+	you, yourKey, err := identify(rs)
+	if err == nil {
+		st.You, st.YourKey = you, yourKey.Source()
+	} else if _, notPartner := err.(notPartnerError); !notPartner {
+		// A KIS_PRIVATE_KEY or KIS_IDENTITY that can't be used would
+		// otherwise just read as "not a partner".
+		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
+			Message: err.Error(), Fix: "set that variable to a usable private key, or unset it"})
+	}
 	if v, err := gitx.Version(); err == nil {
 		st.Git = &gitJSON{fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]), gitx.Supported(v)}
 	}
@@ -1333,6 +1401,7 @@ func printStatus(st statusJSON) {
 
 func cmdSync(args []string) error {
 	fs := newFlags("sync")
+	identityFlag(fs)
 	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])

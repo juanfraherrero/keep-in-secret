@@ -48,37 +48,6 @@ func sshDir() string {
 	return filepath.Join(home, ".ssh")
 }
 
-// Candidate is a private key found on this machine.
-type Candidate struct {
-	Path string
-	Type string
-}
-
-// Candidates lists usable private keys in preference order: KIS_IDENTITY,
-// the kis age identity, then SSH ed25519 and RSA keys.
-func Candidates() []Candidate {
-	var out []Candidate
-	add := func(path string) {
-		if path == "" {
-			return
-		}
-		if _, err := os.Stat(path); err != nil {
-			return
-		}
-		for _, c := range out {
-			if c.Path == path {
-				return
-			}
-		}
-		out = append(out, Candidate{Path: path, Type: detectType(path)})
-	}
-	add(os.Getenv("KIS_IDENTITY"))
-	add(DefaultAgeIdentityPath())
-	add(filepath.Join(sshDir(), "id_ed25519"))
-	add(filepath.Join(sshDir(), "id_rsa"))
-	return out
-}
-
 func detectType(path string) string {
 	data, err := os.ReadFile(path)
 	if err == nil && bytes.Contains(data, []byte("AGE-SECRET-KEY-")) {
@@ -107,24 +76,6 @@ func Generate(path string) (string, error) {
 		return "", err
 	}
 	return pub, nil
-}
-
-// EnvPrivateKey holds the text of a private key (age, or SSH without a
-// passphrase) for machines that receive secrets as environment variables:
-// CI runners and cloud agents. While it is set it is the only key kis uses.
-const EnvPrivateKey = "KIS_PRIVATE_KEY"
-
-// EnvIdentity parses KIS_PRIVATE_KEY; ok is false when it is unset.
-func EnvIdentity() (id age.Identity, pub string, ok bool, err error) {
-	v := strings.TrimSpace(os.Getenv(EnvPrivateKey))
-	if v == "" {
-		return nil, "", false, nil
-	}
-	id, pub, err = parsePrivateKey([]byte(v + "\n"))
-	if err != nil {
-		return nil, "", true, fmt.Errorf("%s: %w", EnvPrivateKey, err)
-	}
-	return id, pub, true, nil
 }
 
 func parsePrivateKey(data []byte) (age.Identity, string, error) {

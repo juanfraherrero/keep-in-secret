@@ -30,14 +30,18 @@ grep 'default_key = "ssh"' .kis/config.toml
 grep '^owner = \["ssh-ed25519 .* owner@laptop"\]$' .kis/recipients.toml
 grep '^ana = \["ssh-ed25519 .* ana@laptop"\]$' .kis/recipients.toml
 stored : .env
+! stdout 'The only key'
 
-# Not a terminal (CI, pipes): prompts are skipped and defaults used.
+# Not a terminal (CI, pipes): prompts are skipped and defaults used. Nobody
+# could add a partner, so init warns that its key is the only way in.
 cd $WORK
 exec git init -q other
 cd other
 exec kis init --name ci
 ! stderr 'Choose'
 exists $KIS_KEY
+stdout '! The only key that can unlock this repository is .*identity\.'
+stdout 'Add another partner \(`kis add NAME KEY`\) before pushing'
 -- answers --
 1
 

@@ -263,9 +263,18 @@ unlock in the job or the agent's setup script:
 - kis reads the key from the variable, never from a file. It is only needed by
   `kis unlock`; commits, pulls and checkouts after that use the repository key
   git already has.
-- While `KIS_PRIVATE_KEY` is set, it is the only key kis uses, and `kis unlock`
-  says so (`unlocked as ci (key from KIS_PRIVATE_KEY)`). `--identity` still wins
-  over it. It also takes an SSH private key without a passphrase.
+- While `KIS_PRIVATE_KEY` is set, it is the only key kis uses, in every command
+  ([which key kis uses](#which-private-key-kis-uses)), and `kis unlock` says so
+  (`unlocked as ci (key from KIS_PRIVATE_KEY)`). `--identity` still wins over
+  it. It also takes an SSH private key without a passphrase.
+- An agent can run the first `kis init` itself with `KIS_PRIVATE_KEY` set: that
+  key becomes the first partner and no key file is written. Without a terminal,
+  init warns when its key is the only partner. Never let the only key live on a
+  disposable machine: add a person (`kis add NAME KEY`) before pushing.
+- Several agents: an unlocked agent or person runs `kis add agent-1 --new-key`
+  once per agent, and each printed key goes straight into that agent's
+  `KIS_PRIVATE_KEY` secret. One agent can then be revoked
+  (`kis remove agent-1`) without touching the others.
 - `kis rotate` and removing other partners don't affect it. `kis remove ci`
   revokes it; `kis add ci --new-key --force` replaces a lost or leaked key.
 - Give each machine its own partner, in the narrowest group that works: a leak
@@ -292,7 +301,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 |---|---|
 | `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
-| `kis pubkey` | Print the public keys found on this machine |
+| `kis pubkey [--identity PATH]` | Print the public keys kis uses here, and where each comes from |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
 | `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, for `KIS_PRIVATE_KEY` |
 | `kis remove NAME [--group G] [--no-rotate]` | Revoke access and rotate the affected keys |
@@ -349,22 +358,28 @@ any machine she pushes code from. The trade-offs:
 When kis gets more than one key it says so. For narrow access, ask the person
 for one public key and use that instead: `kis add ana KEY --force`.
 
-### Keys in other places: `--identity`
+### Which private key kis uses
 
-kis looks for your private key in `$KIS_IDENTITY`, `~/.config/kis/identity`,
-`~/.ssh/id_ed25519` and `~/.ssh/id_rsa`, in that order. For a key anywhere else
-(`~/.ssh/id_ed25519_work`, one key per client…), pass it with `--identity PATH`.
-`PATH` is always your **private** key file, also at `kis init` (kis derives the
-public key from it; a `.pub` file is rejected).
+Every command that needs your private key (`init`, `unlock`, `pubkey`, and
+`sync` or `add` when they create a group) finds it the same way. First match
+wins:
 
+1. `--identity PATH`: only that file.
+2. `KIS_PRIVATE_KEY`: the key's text, not a path; key files are ignored.
+3. The default locations: `$KIS_IDENTITY`, `~/.config/kis/identity`
+   (Windows: `%APPDATA%\kis\identity`), `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`.
+
+A source that is set but unusable (a missing file, a `KIS_PRIVATE_KEY` that
+isn't a key) is an error; kis never falls back to the next one. Each command
+says which key it used (`unlocked as ana (key /home/ana/.ssh/id_ed25519)`), and
+`kis pubkey` prints every key it would use with its source.
+
+For a key anywhere else (`~/.ssh/id_ed25519_work`, one key per client…), pass
+`--identity PATH`. `PATH` is always your **private** key file, also at
+`kis init` (kis derives the public key from it; a `.pub` file is rejected).
 kis does not remember that path ([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)):
-
-- Pass it again on every `kis unlock`: `kis unlock --identity PATH`. That uses
-  only that file, even over `KIS_PRIVATE_KEY`.
-- Or set `KIS_IDENTITY=PATH` in your shell profile. kis then tries that file
-  first, on every command. It is also the only way to create a group
-  (`kis sync` with a new `@group`, `kis add NAME --group NEW`), since those
-  commands have no `--identity` flag.
+pass it again to each of those commands, or set `KIS_IDENTITY=PATH` in your
+shell profile so kis tries that file first.
 
 Each partner can use either type; `default_key` in `.kis/config.toml` only decides
 what kis suggests to new partners.

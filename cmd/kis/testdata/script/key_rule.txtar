@@ -1,0 +1,134 @@
+# One key rule for every command that needs "my private key", first match
+# wins: --identity PATH, then KIS_PRIVATE_KEY, then the default locations
+# (KIS_IDENTITY, ~/.config/kis/identity, ~/.ssh/id_ed25519, ~/.ssh/id_rsa).
+# Given the same flags and environment, init, unlock, sync (creating a group),
+# add --group NEW and pubkey all name the same partner and the same source.
+
+# Three partners, one per source: owner (kis key in the default location),
+# work (an SSH key at a custom path) and bot (only ever in KIS_PRIVATE_KEY).
+exec kis keygen
+sshkey owner@work $WORK/keys/work_ed25519
+cd app
+exec git init -q
+exec kis init -y --name owner
+stdout 'encrypted for owner \(age key .*identity\)'
+exec kis add work $WORK/keys/work_ed25519.pub
+exec kis add bot --new-key
+readvar BOT_KEY stdout 'AGE-SECRET-KEY-1[0-9A-Z]+'
+exec git add .
+exec git commit -qm init
+
+# 3. Default locations.
+exec kis pubkey
+stdout '^# .*identity \(age\)$'
+exec kis unlock
+stdout 'unlocked as owner \(key .*identity\); decrypted'
+cp $WORK/ge-a .gitencrypt
+exec kis sync
+stdout 'created group ga with you \(owner\) as its member'
+exec kis add work --group gb
+stdout 'created group gb \(you are a member as owner\)'
+exec kis status
+stdout '^you +owner \(key .*identity\)$'
+
+# 2. KIS_PRIVATE_KEY: only that key, the key files are ignored.
+env KIS_PRIVATE_KEY=$BOT_KEY
+exec kis pubkey
+stdout '^# KIS_PRIVATE_KEY \(age\); key files are ignored while it is set$'
+! stdout 'identity'
+exec kis unlock
+stdout 'unlocked as bot \(key from KIS_PRIVATE_KEY\)'
+cp $WORK/ge-c .gitencrypt
+exec kis sync
+stdout 'created group gc with you \(bot\) as its member'
+exec kis add owner --group gd
+stdout 'created group gd \(you are a member as bot\)'
+exec kis status
+stdout '^you +bot \(key KIS_PRIVATE_KEY\)$'
+
+# 1. --identity wins over KIS_PRIVATE_KEY (still set) in every command.
+exec kis pubkey --identity $WORK/keys/work_ed25519
+stdout '^# .*work_ed25519 \(ssh, from --identity\); other keys are ignored$'
+! stdout 'KIS_PRIVATE_KEY'
+exec kis unlock --identity $WORK/keys/work_ed25519
+stdout 'unlocked as work \(key from --identity .*work_ed25519\)'
+cp $WORK/ge-e .gitencrypt
+exec kis sync --identity $WORK/keys/work_ed25519
+stdout 'created group ge with you \(work\) as its member'
+exec kis add owner --group gf --identity $WORK/keys/work_ed25519
+stdout 'created group gf \(you are a member as work\)'
+cd $WORK
+exec git init -q flagged
+cd flagged
+exec kis init -y --name work --identity $WORK/keys/work_ed25519
+stdout 'encrypted for work \(ssh key from --identity .*work_ed25519\)'
+grep '^work = \["ssh-ed25519 .* owner@work"\]$' .kis/recipients.toml
+! grep 'age1' .kis/recipients.toml
+
+# A source that is set but unusable fails loudly, in every command, and never
+# falls through to the next one.
+cd $WORK/app
+env KIS_PRIVATE_KEY=not-a-key
+! exec kis pubkey
+stderr 'KIS_PRIVATE_KEY: not an age or SSH private key'
+! exec kis unlock
+stderr 'KIS_PRIVATE_KEY: not an age or SSH private key'
+cp $WORK/ge-g .gitencrypt
+! exec kis sync
+stderr 'creating group gg: KIS_PRIVATE_KEY: not an age or SSH private key'
+! exists .kis/keys/gg
+! exec kis add owner --group gh
+stderr 'creating group gh: KIS_PRIVATE_KEY: not an age or SSH private key'
+! exists .kis/keys/gh
+exec kis status
+stdout '! KIS_PRIVATE_KEY: not an age or SSH private key'
+cd $WORK
+exec git init -q bad
+cd bad
+! exec kis init -y --name x
+stderr 'KIS_PRIVATE_KEY: not an age or SSH private key'
+! exists .kis
+! exists .gitencrypt
+
+# ...including --identity and KIS_IDENTITY pointing at a missing file.
+env KIS_PRIVATE_KEY=
+! exec kis init -y --name x --identity $WORK/keys/missing
+stderr '--identity: no such file .*missing'
+! exists .kis
+cd $WORK/app
+! exec kis unlock --identity $WORK/keys/missing
+stderr '--identity: no such file .*missing'
+env KIS_IDENTITY=$WORK/keys/missing
+! exec kis unlock
+stderr 'KIS_IDENTITY: no such file .*missing'
+! exec kis pubkey
+stderr 'KIS_IDENTITY: no such file .*missing'
+
+# KIS_IDENTITY is the first default location, and says so.
+env KIS_IDENTITY=$WORK/keys/work_ed25519
+exec kis pubkey
+stdout '^# .*work_ed25519 \(ssh, from KIS_IDENTITY\)$'
+stdout '^# .*identity \(age\)$'
+exec kis unlock
+stdout 'unlocked as owner \(key .*identity\)'
+
+-- app/.env --
+API_KEY=dev-123
+-- ge-a --
+.env
+.env.a @ga
+-- ge-c --
+.env
+.env.a @ga
+.env.c @gc
+-- ge-e --
+.env
+.env.a @ga
+.env.c @gc
+.env.e @ge
+-- ge-g --
+.env
+.env.a @ga
+.env.c @gc
+.env.e @ge
+.env.g @gg

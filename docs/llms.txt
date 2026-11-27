@@ -30,17 +30,29 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
-- If the developer's private key is not in a standard place (`$KIS_IDENTITY`,
-  `~/.config/kis/identity`, `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`), run
-  `kis unlock --identity PATH`, where PATH is their **private** key file (ask
-  them for the path; never guess or search for keys). kis does not remember
-  it: pass it on every `kis unlock`, or have the developer set
-  `KIS_IDENTITY=PATH`, which creating a group (`@GROUP`) also needs.
-  `kis init --identity PATH` takes the same private key file, not a `.pub`.
-- On CI or a cloud agent, `kis unlock` reads the private key from the
-  `KIS_PRIVATE_KEY` environment variable. If it is missing, ask the developer
-  to run `kis add NAME --new-key` and store the printed key as that secret;
-  never move secret values into the platform's own variables to bypass kis.
+- Which private key kis uses, the same in every command (`init`, `unlock`,
+  `pubkey`, and `sync` / `add` when they create a group); first match wins:
+  1. `--identity PATH` (a private key file; only that file),
+  2. `KIS_PRIVATE_KEY` (the key's text, not a path; key files are ignored),
+  3. `$KIS_IDENTITY`, `~/.config/kis/identity`, `~/.ssh/id_ed25519`,
+     `~/.ssh/id_rsa`.
+  A set but unusable source is an error, never a fallback. `kis pubkey` and
+  the `unlock` message say which key was used.
+- If the developer's private key is not in a standard place, pass
+  `--identity PATH` to each of those commands, where PATH is their **private**
+  key file (ask them for the path; never guess or search for keys). kis does
+  not remember it; the developer can set `KIS_IDENTITY=PATH` instead.
+- On CI or a cloud agent, kis reads the private key from the `KIS_PRIVATE_KEY`
+  environment variable. If it is missing, ask the developer to run
+  `kis add NAME --new-key` and store the printed key as that secret; never
+  move secret values into the platform's own variables to bypass kis. Several
+  agents: one `kis add agent-N --new-key` per agent, each key in that agent's
+  own secret, so one can be revoked alone. Never print those keys into logs,
+  commits or chat.
+- `kis init` with `KIS_PRIVATE_KEY` set uses that key as the first partner
+  and writes no key file. Without a terminal it warns when its key is the only
+  partner: tell the developer, and add them (`kis add NAME KEY`) before
+  pushing, so the repository doesn't depend on a disposable machine.
 - A line ending in `@GROUP` (e.g. `.env.production @prod`) encrypts those files
   for that group only. Files of a group this clone isn't in stay ciphertext:
   that is expected, commit around them; never try to decrypt or recreate them.
@@ -85,7 +97,7 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
 - `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone
-- `kis keygen`, `kis pubkey`: personal key management. Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
+- `kis keygen`, `kis pubkey [--identity PATH]`: personal key management (`pubkey` prints the keys kis uses here and where each comes from). Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
 
 ## Docs
 
