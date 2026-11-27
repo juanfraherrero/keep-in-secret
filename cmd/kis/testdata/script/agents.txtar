@@ -11,6 +11,10 @@ grep '^# Our project$' AGENTS.md
 grep '^Use tabs\.$' AGENTS.md
 grep '^## Secrets are committed encrypted \(kis\)$' AGENTS.md
 grep 'run `kis status --check`' AGENTS.md
+grep 'kis status --check --since origin/main' AGENTS.md
+grep '^- Never copy secret values into code' AGENTS.md
+grep 'refer to the variable by name, or ask the' AGENTS.md
+! grep 'unless the task requires it' AGENTS.md
 grep '^<!-- <<< kis -->$' CLAUDE.md
 grep '^See AGENTS\.md$' CLAUDE.md
 stored : .env
