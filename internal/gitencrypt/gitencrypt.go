@@ -22,6 +22,7 @@ const (
 const DefaultContent = `# Files matching these patterns are encrypted in git by kis (keep-in-secret).
 # Same syntax as .gitignore. kis keeps .gitattributes in sync; run "kis sync"
 # after editing (the pre-commit check will remind you).
+# Other stacks: https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md
 .env
 .env.*
 !.env.example

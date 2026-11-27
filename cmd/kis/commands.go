@@ -42,15 +42,10 @@ func cmdInit(args []string) error {
 	fs := newFlags("init")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	name := fs.String("name", "", "your name in the recipients list")
-	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	noAgents := fs.Bool("no-agents", false, "don't add the kis section to AGENTS.md (read by coding agents)")
 	fs.BoolVar(&assumeYes, "y", false, "accept defaults without prompting")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
-	}
-	presets, err := parsePresets(*presetFlag)
-	if err != nil {
-		return err
 	}
 
 	if err := gitx.CheckVersion(); err != nil {
@@ -96,12 +91,6 @@ func cmdInit(args []string) error {
 		step("created .gitencrypt (.env, .env.* except examples). Edit it to add more paths")
 	} else {
 		step("using existing .gitencrypt")
-	}
-	if presets == nil {
-		presets = offerDetectedPresets(r)
-	}
-	if err := applyPresets(r, presets); err != nil {
-		return err
 	}
 
 	master := crypt.NewKey()
@@ -184,74 +173,6 @@ func identityError(err error, path string) error {
 			"  Repositories you were already in then need a partner to run kis add YOUR_NAME NEW_KEY --force; their files are not re-encrypted", err)
 	}
 	return fmt.Errorf("%w\n  Restore it from a backup if you have one, or pick another key with --identity PATH", err)
-}
-
-func presetNames() string {
-	var names []string
-	for _, p := range gitencrypt.Presets {
-		names = append(names, p.Name)
-	}
-	return strings.Join(names, ", ")
-}
-
-// parsePresets returns nil for an empty flag, so callers can tell "none
-// asked for" from an explicit list.
-func parsePresets(flag string) ([]gitencrypt.Preset, error) {
-	if flag == "" {
-		return nil, nil
-	}
-	var out []gitencrypt.Preset
-	for _, n := range strings.Split(flag, ",") {
-		p, err := gitencrypt.FindPreset(strings.TrimSpace(n))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, nil
-}
-
-// offerDetectedPresets asks about each stack found in the repository. Without
-// a terminal it only prints how to opt in: encrypting files the team may rely
-// on in plaintext (CI reading *.tfvars, say) must be a deliberate choice.
-func offerDetectedPresets(r *repo.Repo) []gitencrypt.Preset {
-	var chosen []gitencrypt.Preset
-	for _, p := range gitencrypt.Detect(r.Root) {
-		if covered(r, p) {
-			continue
-		}
-		pats := strings.Join(p.Patterns, " ")
-		if interactive() {
-			if confirm(fmt.Sprintf("%s project detected. Also encrypt its %s (%s)?", p.Name, p.Summary, pats), true) {
-				chosen = append(chosen, p)
-			}
-			continue
-		}
-		note("%s project detected; to also encrypt its %s (%s): kis sync --preset %s", p.Name, p.Summary, pats, p.Name)
-	}
-	return chosen
-}
-
-// covered reports whether .gitencrypt already lists every pattern of p.
-func covered(r *repo.Repo, p gitencrypt.Preset) bool {
-	ge, _ := r.ReadGitencrypt()
-	return gitencrypt.WithPresets(ge, []gitencrypt.Preset{p}) == ge
-}
-
-func applyPresets(r *repo.Repo, presets []gitencrypt.Preset) error {
-	if len(presets) == 0 {
-		return nil
-	}
-	changed, err := r.AddPresets(presets)
-	if err != nil || !changed {
-		return err
-	}
-	var names []string
-	for _, p := range presets {
-		names = append(names, p.Name)
-	}
-	step("added %s patterns to .gitencrypt", strings.Join(names, ", "))
-	return nil
 }
 
 // writeAgentNotes adds or refreshes the kis section coding agents read, and
@@ -1333,19 +1254,11 @@ func printStatus(st statusJSON) {
 
 func cmdSync(args []string) error {
 	fs := newFlags("sync")
-	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	presets, err := parsePresets(*presetFlag)
-	if err != nil {
-		return err
-	}
 	r, err := openInitialized()
 	if err != nil {
-		return err
-	}
-	if err := applyPresets(r, presets); err != nil {
 		return err
 	}
 	if err := ensureGroups(r); err != nil {

@@ -361,17 +361,6 @@ func (r *Repo) WriteDefaultGitencrypt() (bool, error) {
 	return true, r.writeFile(gitencrypt.FileName, []byte(gitencrypt.DefaultContent), 0o644)
 }
 
-// AddPresets appends the presets' missing patterns to .gitencrypt. It
-// returns true if the file changed.
-func (r *Repo) AddPresets(presets []gitencrypt.Preset) (bool, error) {
-	ge, _ := r.ReadGitencrypt()
-	merged := gitencrypt.WithPresets(ge, presets)
-	if merged == ge {
-		return false, nil
-	}
-	return true, r.writeFile(gitencrypt.FileName, []byte(merged), 0o644)
-}
-
 func (r *Repo) readAttributes() string {
 	data, _ := os.ReadFile(r.path(".gitattributes"))
 	return string(data)
