@@ -216,13 +216,14 @@ a file, a log or a chat.
 **Cause:** the key reached a log, a file, a chat or an agent's transcript,
 for example because stdout wasn't piped into the secret store.
 
-**What to do:** replace it with `kis add NAME --new-key --force`, store the
-new key as that machine's `KIS_PRIVATE_KEY`, then commit and push. From then
-on the old key can't unlock a clone. It could still open the repository key
-from the repository's history, so if it may have been used (anyone other than
-the machine could have read it), also run `kis rotate`, then commit and push.
-Secrets it could already decrypt stay readable to whoever holds it: rotate the
-real credentials too.
+**What to do:** replace it with `kis add NAME --new-key --force` and store the
+new key as that machine's `KIS_PRIVATE_KEY`, **then always run `kis rotate`**,
+and commit and push. `--force` alone isn't enough: the old key can still open
+the repository key from an older `.kis/keys/NAME.age` in the git history, and
+with it every current and future secret. Only `kis rotate` replaces the
+repository key. Partners run `kis unlock` after pulling. Secrets the leaked key
+could already decrypt stay readable to whoever has it: rotate the real
+credentials too.
 
 ## Access
 
