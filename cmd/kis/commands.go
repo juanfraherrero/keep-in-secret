@@ -793,6 +793,9 @@ func cmdRemove(args []string) error {
 			}
 		}
 	}
+	// Every check runs for every group before anything is written: a refusal
+	// half way would delete the key file without rotating, and a retry would
+	// then find nothing to rotate (#10).
 	for _, g := range groups {
 		if len(r.Members(g)) == 1 {
 			if g == crypt.DefaultGroup {
@@ -800,8 +803,14 @@ func cmdRemove(args []string) error {
 			}
 			return fmt.Errorf("cannot remove the last member of group %s: nobody could decrypt its files", g)
 		}
-		if _, err := r.GroupKey(g); err != nil && !*noRotate {
+		if *noRotate {
+			continue
+		}
+		if _, err := r.GroupKey(g); err != nil {
 			return fmt.Errorf("you are not in group %s, so you can't rotate its key; ask one of %s, or use --no-rotate", g, strings.Join(r.Members(g), ", "))
+		}
+		if err := checkClean(r, g, *force); err != nil {
+			return err
 		}
 	}
 	for _, g := range groups {
@@ -814,6 +823,10 @@ func cmdRemove(args []string) error {
 			}
 		}
 	}
+	// In recipients.toml but in no group: an earlier kis remove deleted the
+	// key file and stopped before rotating (#10). Nothing here says which
+	// groups they could read, so no key is rotated now.
+	keyless := len(in) == 0
 	dropped := len(r.GroupsOf(name)) == 0
 	if dropped {
 		delete(rs, name)
@@ -824,12 +837,21 @@ func cmdRemove(args []string) error {
 	if _, err := r.Git("add", "-A", "--", repo.Dir); err != nil {
 		return err
 	}
-	if dropped {
+	if keyless {
+		fmt.Printf("  removed %s from the partner list\n", name)
+		warn("%s had no key file in any group, so no group key was rotated", name)
+		warn("if %s ever ran kis unlock, they can still decrypt new secrets: run `kis rotate` (every group you are in), and ask a member of each other group to run it too", name)
+		warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
+	} else if dropped {
 		step("removed %s", name)
 		warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
 	} else {
 		step("removed %s from %s", name, strings.Join(groups, ", "))
 		warn("%s can still read %s secrets in past commits: change the real credentials (DB passwords, API keys)", name, strings.Join(groups, ", "))
+	}
+	if keyless {
+		fmt.Println("\nCommit and push.")
+		return nil
 	}
 	fmt.Println("\nCommit and push. Partners who pull will get the new key automatically.")
 	return nil
@@ -875,14 +897,12 @@ func rotateGroup(r *repo.Repo, rs repo.Recipients, group string, force bool) err
 	if _, err := r.GroupKey(group); err != nil {
 		return err
 	}
+	if err := checkClean(r, group, force); err != nil {
+		return err
+	}
 	files, err := groupFiles(r, group)
 	if err != nil {
 		return err
-	}
-	if dirty, err := r.Dirty(files); err != nil {
-		return err
-	} else if len(dirty) > 0 && !force {
-		return fmt.Errorf("uncommitted changes in %s: commit them first or use --force", strings.Join(dirty, ", "))
 	}
 	if _, err := r.Refresh(files, false); err != nil { // working copies must be plaintext
 		return err
@@ -905,6 +925,26 @@ func rotateGroup(r *repo.Repo, rs repo.Recipients, group string, force bool) err
 		what = group
 	}
 	step("new %s key for %s; re-encrypted %d file(s)", what, strings.Join(members, ", "), len(files))
+	return nil
+}
+
+// checkClean refuses to rotate group while its tracked secrets have
+// uncommitted changes, unless force.
+func checkClean(r *repo.Repo, group string, force bool) error {
+	if force {
+		return nil
+	}
+	files, err := groupFiles(r, group)
+	if err != nil {
+		return err
+	}
+	dirty, err := r.Dirty(files)
+	if err != nil {
+		return err
+	}
+	if len(dirty) > 0 {
+		return fmt.Errorf("uncommitted changes in %s: commit them first or use --force", strings.Join(dirty, ", "))
+	}
 	return nil
 }
 
