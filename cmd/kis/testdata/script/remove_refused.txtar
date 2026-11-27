@@ -1,0 +1,85 @@
+# kis remove refuses before writing anything, so a retry still rotates the
+# key and the removed partner can't read new commits (#10).
+
+as bob
+cd $WORK
+exec kis keygen
+pubkey BOB_KEY
+
+as carol
+cd $WORK
+exec kis keygen
+pubkey CAROL_KEY
+
+# --- owner sets up, grants bob and carol access, pushes ---
+as owner
+cd $WORK/app
+exec git init -q
+exec kis init -y --name owner
+exec kis add bob $BOB_KEY
+exec kis add carol $CAROL_KEY
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+# --- bob unlocks: his clone now caches the repository key ---
+as bob
+cd $WORK
+exec git clone -q $REMOTE bobclone
+cd bobclone
+exec kis unlock
+cmp .env $WORK/v1
+
+# --- an uncommitted change: remove refuses and changes nothing ---
+as owner
+cd $WORK/app
+cp $WORK/v2 .env
+snapshot before-remove
+! exec kis remove bob
+stderr 'uncommitted changes in \.env: commit them first or use --force'
+changed before-remove
+exists .kis/keys/bob.age
+grep '^bob = ' .kis/recipients.toml
+
+# --- after committing, the retry rotates the key ---
+exec git commit -qam 'edit'
+exec kis remove bob
+stdout '✓ new repository key for carol, owner; re-encrypted 1 file\(s\)'
+stdout '✓ removed bob'
+! exists .kis/keys/bob.age
+exec git commit -qm 'remove bob'
+cp $WORK/v3 .env
+exec git commit -qam 'new password'
+exec git push -q
+
+# --- bob pulls: his old key can't decrypt the new secret ---
+as bob
+cd $WORK/bobclone
+exec git pull -q
+stderr 'cannot decrypt .env'
+encrypted .env
+! grep rotated-real-password .env
+
+# --- half-done state left by an older kis: in recipients.toml, no key file ---
+as owner
+cd $WORK/app
+rm .kis/keys/carol.age
+exec git commit -qam 'lost carol.age'
+exec kis remove carol
+! stdout '✓ removed carol'
+! stdout 'new repository key'
+stdout 'removed carol from the partner list'
+stdout 'carol had no key file in any group, so no group key was rotated'
+stdout 'run `kis rotate`'
+! stdout 'get the new key automatically'
+! grep carol .kis/recipients.toml
+
+-- app/.env --
+DB_PASS=hunter2
+-- v1 --
+DB_PASS=hunter2
+-- v2 --
+DB_PASS=correct-horse
+-- v3 --
+DB_PASS=rotated-real-password
