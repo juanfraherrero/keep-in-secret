@@ -719,7 +719,7 @@ git clone … &amp;&amp; cd …
       <div class="cmd"><code>kis unlock</code><span>Decrypt after cloning; wires up the git filters and hook</span></div>
       <div class="cmd"><code>kis lock</code><span>Forget the key here and turn files back into ciphertext</span></div>
       <div class="cmd"><code>kis rotate</code><span>New master key, re-encrypt everything</span></div>
-      <div class="cmd"><code>kis sync</code><span>Apply <code class="mono">.gitencrypt</code> edits to <code class="mono">.gitattributes</code> (<code class="mono">--preset terraform</code> and others for non-.env stacks)</span></div>
+      <div class="cmd"><code>kis sync</code><span>Apply <code class="mono">.gitencrypt</code> edits to <code class="mono">.gitattributes</code> (<a href="https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md" style="color:var(--cyan)">common patterns per stack</a>)</span></div>
       <div class="cmd"><code>kis status --check</code><span>Is it safe to push? Exits 1 if a secret would leave in plaintext; <code class="mono">--json</code> for agents, <code class="mono">--since origin/main</code> for PRs</span></div>
       <div class="cmd"><code>kis pubkey</code><span>Print the public keys kis uses here, and where each comes from</span></div>
     </div>

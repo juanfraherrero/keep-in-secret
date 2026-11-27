@@ -1,0 +1,85 @@
+# kis doesn't guess a project's stack: .gitencrypt alone decides what is
+# encrypted, and the lines in docs/gitencrypt-patterns.md work at any depth.
+
+# An Android + Terraform + Maven project gets the default .gitencrypt and no
+# stack suggestions.
+cd stacks
+exec git init -q
+exec kis init -y --name owner
+! stdout 'detected'
+! stdout 'preset'
+grep '^# Other stacks: https://github\.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns\.md$' .gitencrypt
+! grep 'jks|keystore|tfvars|application-' .gitencrypt
+attr release.jks filter unspecified
+attr infra/prod.tfvars filter unspecified
+exec git add .
+exec git commit -qm init
+
+# --preset is gone: an unknown flag, and nothing changes.
+snapshot before
+! exec kis sync --preset android
+stderr 'flag provided but not defined: -preset'
+changed before
+cd $WORK/fresh
+exec git init -q
+snapshot fresh
+! exec kis init -y --name owner --preset android
+stderr 'flag provided but not defined: -preset'
+changed fresh
+
+# The catalog's Rails lines cover an app in a monorepo; plain
+# config/master.key would only match at the root.
+cd $WORK/mono
+exec git init -q
+exec kis init -y --name owner
+exec git commit -qm init
+cp $WORK/rails-gitencrypt .gitencrypt
+exec kis sync
+attr apps/web/config/master.key filter kis
+attr apps/web/config/credentials/production.key filter kis
+attr apps/web/config/credentials.yml.enc filter unspecified
+stored : apps/web/config/credentials/production.key
+
+# Rails' own .gitignore in the app still hides master.key: kis says so, and
+# once that line is gone the next sync stages the key encrypted.
+stdout '! still ignored \(check nested \.gitignore files\): apps/web/config/master\.key'
+cp $WORK/web-gitignore-fixed apps/web/.gitignore
+exec kis sync
+stdout '✓ staged encrypted: apps/web/config/master\.key'
+stored : apps/web/config/master.key
+exec git add apps/web/.gitignore
+exec git commit -qm 'encrypt rails keys'
+exec kis status --check
+
+-- stacks/.env --
+A=1
+-- stacks/app/src/main/AndroidManifest.xml --
+<manifest/>
+-- stacks/release.jks --
+placeholder
+-- stacks/infra/main.tf --
+terraform {}
+-- stacks/infra/prod.tfvars --
+db_password = "hunter2"
+-- stacks/pom.xml --
+<project/>
+-- fresh/.env --
+A=1
+-- mono/.env --
+A=1
+-- mono/apps/web/.gitignore --
+/config/master.key
+-- mono/apps/web/config/master.key --
+0123456789abcdef
+-- mono/apps/web/config/credentials/production.key --
+fedcba9876543210
+-- mono/apps/web/config/credentials.yml.enc --
+ciphertext-from-rails
+-- web-gitignore-fixed --
+/log/*
+-- rails-gitencrypt --
+.env
+.env.*
+!.env.example
+**/config/master.key
+**/config/credentials/*.key

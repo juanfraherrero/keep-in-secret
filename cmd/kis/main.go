@@ -32,7 +32,7 @@ var commands []command
 
 func init() {
 	commands = []command{
-		{name: "init", usage: "init [--identity PATH] [--preset LIST] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
+		{name: "init", usage: "init [--identity PATH] [--no-agents] [-y]", summary: "Set up encryption in this repository", run: cmdInit},
 		{name: "keygen", usage: "keygen [--force]", summary: "Create your personal key and print the public key to share", run: cmdKeygen},
 		{name: "pubkey", usage: "pubkey [--identity PATH]", summary: "Print the public keys kis uses here, and where each comes from", run: cmdPubkey},
 		{name: "add", usage: "add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]", summary: "Give a partner access", run: cmdAdd,
@@ -49,7 +49,7 @@ func init() {
 		{name: "unlock", usage: "unlock [--identity PATH]", summary: "Get access after cloning: decrypts the files", run: cmdUnlock},
 		{name: "lock", usage: "lock [--force]", summary: "Forget the key on this machine and re-encrypt the files", run: cmdLock},
 		{name: "status", usage: "status [--check] [--json] [--since REV]", summary: "Show encryption state, partners and encrypted files", run: cmdStatus},
-		{name: "sync", usage: "sync [--preset LIST]", summary: "Apply .gitencrypt changes to .gitattributes and re-encrypt", run: cmdSync},
+		{name: "sync", usage: "sync", summary: "Apply .gitencrypt changes to .gitattributes and re-encrypt", run: cmdSync},
 		{name: "version", usage: "version", summary: "Print the kis version", run: func([]string) error { fmt.Println("kis", version); return nil }},
 		// Invoked by git, not by people.
 		{name: "clean", run: cmdClean, hidden: true},

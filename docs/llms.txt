@@ -67,7 +67,6 @@ Every prompt takes its default without a terminal; `-y` forces it.
 kis init -y --name NAME              # creates .gitencrypt, key, AGENTS.md section
                                      # NAME: how partners will see the developer (committed);
                                      # without --name, the git email before the @ is used
-kis init -y --name NAME --preset terraform,android
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push
 kis unlock                           # partner, after cloning
@@ -75,24 +74,20 @@ kis add ci --new-key [--group G]     # CI / cloud agent: store the printed key a
 KIS_PRIVATE_KEY=… kis unlock         # on that machine
 ```
 
-## Stacks that don't use .env
+## Choosing which files to encrypt
 
-`kis init` detects these and prints `kis sync --preset NAME`; it never applies
-them unasked, because encrypting files CI reads in plaintext must be deliberate.
-
-- `android`: `*.jks`, `*.keystore`, `keystore.properties`
-- `rails`: `config/master.key`, `config/credentials/*.key`
-- `spring`: `application-local.properties`, `application-local.yml`, `application-local.yaml`
-- `terraform`: `*.tfvars`, `*.tfvars.json` (not `*.tfvars.example`)
-
-Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
-`.gitencrypt` covers. Any other file is one line in `.gitencrypt`.
+Find the project's secret files, add their paths to `.gitencrypt`, run
+`kis sync`; [gitencrypt-patterns.md](https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md)
+lists common ones per stack (Android keystores, Rails keys, Spring profiles,
+Terraform variables). Ask the developer when unsure: encrypting a file CI reads
+in plaintext breaks CI until CI runs `kis unlock`. A pattern with a slash only
+matches at the repository root; use `**/` to match at any depth (monorepos).
 
 ## Commands
 
-- `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
+- `kis init [--identity PATH] [--name NAME] [--no-agents] [-y]`: set up encryption
 - `kis status [--check] [--json] [--since REV]`: state and whether it is safe to push
-- `kis sync [--preset LIST]`: apply `.gitencrypt` edits and re-encrypt
+- `kis sync`: apply `.gitencrypt` edits and re-encrypt
 - `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent. `github:USER` grants access to every ed25519/RSA key on that GitHub account, read once; for a single key, ask the person for it
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
@@ -103,3 +98,4 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 
 - [README](https://github.com/juanfraherrero/keep-in-secret#readme): install, setup, onboarding, CI
 - [How it works](https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/how-it-works.md): crypto, file format, git filter protocol
+- [.gitencrypt patterns](https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md): common secret files per stack, ready to copy

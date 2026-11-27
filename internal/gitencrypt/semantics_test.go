@@ -29,6 +29,7 @@ func TestMatchesGitignoreSemantics(t *testing.T) {
 		{"secrets\n", []string{"secrets", "secrets/a", "secrets/b/c", "x/secrets/a"}, nil},
 		{"/secrets/\n", []string{"secrets/a", "x/secrets/a"}, nil},
 		{"**/keys/*.json\n", []string{"keys/a.json", "a/b/keys/c.json", "keys/sub/c.json"}, nil},
+		{"**/config/master.key\n**/config/credentials/*.key\n", []string{"config/master.key", "apps/web/config/master.key", "config/credentials/production.key", "apps/web/config/credentials/staging.key", "apps/web/config/credentials/staging.yml.enc"}, nil},
 		{"deploy/**/*.key\n", []string{"deploy/a.key", "deploy/x/y/b.key", "other/a.key"}, nil},
 		{"*.secret\n!keep/*.secret\n", []string{"a.secret", "keep/b.secret", "keep/sub/c.secret"}, nil},
 		{"\\#hash\n\\!bang\n", []string{"#hash", "!bang"}, nil},

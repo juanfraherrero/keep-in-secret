@@ -230,6 +230,20 @@ removed partner can.
 
 _Not documented yet._
 
+### `kis remove`: `NAME had no key file in any group, so no group key was rotated`
+
+**Cause:** NAME is in `.kis/recipients.toml` but has no `.age` file under
+`.kis/keys/`. Older versions of kis left this state when `kis remove` refused
+because of uncommitted changes: the key file was already deleted, and the key
+was not rotated (issue #10). A key file deleted by hand does the same. kis
+can't tell which groups NAME was in, so it drops NAME from the partner list
+without rotating anything.
+
+**What to do:** if NAME ever ran `kis unlock`, their clone still has the
+current key and can decrypt new secrets. Run `kis rotate` (it rotates every
+group you are in), and ask a member of each group you are not in to run it
+too. Then commit and push.
+
 ## Committing
 
 ### `these were already committed in PLAINTEXT before: FILE`

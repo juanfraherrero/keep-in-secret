@@ -42,15 +42,10 @@ func cmdInit(args []string) error {
 	fs := newFlags("init")
 	identityFlag(fs)
 	name := fs.String("name", "", "your name in the recipients list")
-	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	noAgents := fs.Bool("no-agents", false, "don't add the kis section to AGENTS.md (read by coding agents)")
 	fs.BoolVar(&assumeYes, "y", false, "accept defaults without prompting")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
-	}
-	presets, err := parsePresets(*presetFlag)
-	if err != nil {
-		return err
 	}
 
 	if err := gitx.CheckVersion(); err != nil {
@@ -97,12 +92,6 @@ func cmdInit(args []string) error {
 		step("created .gitencrypt (.env, .env.* except examples). Edit it to add more paths")
 	} else {
 		step("using existing .gitencrypt")
-	}
-	if presets == nil {
-		presets = offerDetectedPresets(r)
-	}
-	if err := applyPresets(r, presets); err != nil {
-		return err
 	}
 
 	master := crypt.NewKey()
@@ -205,74 +194,6 @@ func identityError(err error, path string) error {
 			"  Repositories you were already in then need a partner to run kis add YOUR_NAME NEW_KEY --force; their files are not re-encrypted", err)
 	}
 	return fmt.Errorf("%w\n  Restore it from a backup if you have one, or pick another key with --identity PATH", err)
-}
-
-func presetNames() string {
-	var names []string
-	for _, p := range gitencrypt.Presets {
-		names = append(names, p.Name)
-	}
-	return strings.Join(names, ", ")
-}
-
-// parsePresets returns nil for an empty flag, so callers can tell "none
-// asked for" from an explicit list.
-func parsePresets(flag string) ([]gitencrypt.Preset, error) {
-	if flag == "" {
-		return nil, nil
-	}
-	var out []gitencrypt.Preset
-	for _, n := range strings.Split(flag, ",") {
-		p, err := gitencrypt.FindPreset(strings.TrimSpace(n))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, nil
-}
-
-// offerDetectedPresets asks about each stack found in the repository. Without
-// a terminal it only prints how to opt in: encrypting files the team may rely
-// on in plaintext (CI reading *.tfvars, say) must be a deliberate choice.
-func offerDetectedPresets(r *repo.Repo) []gitencrypt.Preset {
-	var chosen []gitencrypt.Preset
-	for _, p := range gitencrypt.Detect(r.Root) {
-		if covered(r, p) {
-			continue
-		}
-		pats := strings.Join(p.Patterns, " ")
-		if interactive() {
-			if confirm(fmt.Sprintf("%s project detected. Also encrypt its %s (%s)?", p.Name, p.Summary, pats), true) {
-				chosen = append(chosen, p)
-			}
-			continue
-		}
-		note("%s project detected; to also encrypt its %s (%s): kis sync --preset %s", p.Name, p.Summary, pats, p.Name)
-	}
-	return chosen
-}
-
-// covered reports whether .gitencrypt already lists every pattern of p.
-func covered(r *repo.Repo, p gitencrypt.Preset) bool {
-	ge, _ := r.ReadGitencrypt()
-	return gitencrypt.WithPresets(ge, []gitencrypt.Preset{p}) == ge
-}
-
-func applyPresets(r *repo.Repo, presets []gitencrypt.Preset) error {
-	if len(presets) == 0 {
-		return nil
-	}
-	changed, err := r.AddPresets(presets)
-	if err != nil || !changed {
-		return err
-	}
-	var names []string
-	for _, p := range presets {
-		names = append(names, p.Name)
-	}
-	step("added %s patterns to .gitencrypt", strings.Join(names, ", "))
-	return nil
 }
 
 // writeAgentNotes adds or refreshes the kis section coding agents read, and
@@ -850,6 +771,9 @@ func cmdRemove(args []string) error {
 			}
 		}
 	}
+	// Every check runs for every group before anything is written: a refusal
+	// half way would delete the key file without rotating, and a retry would
+	// then find nothing to rotate (#10).
 	for _, g := range groups {
 		if len(r.Members(g)) == 1 {
 			if g == crypt.DefaultGroup {
@@ -857,8 +781,14 @@ func cmdRemove(args []string) error {
 			}
 			return fmt.Errorf("cannot remove the last member of group %s: nobody could decrypt its files", g)
 		}
-		if _, err := r.GroupKey(g); err != nil && !*noRotate {
+		if *noRotate {
+			continue
+		}
+		if _, err := r.GroupKey(g); err != nil {
 			return fmt.Errorf("you are not in group %s, so you can't rotate its key; ask one of %s, or use --no-rotate", g, strings.Join(r.Members(g), ", "))
+		}
+		if err := checkClean(r, g, *force); err != nil {
+			return err
 		}
 	}
 	for _, g := range groups {
@@ -871,6 +801,10 @@ func cmdRemove(args []string) error {
 			}
 		}
 	}
+	// In recipients.toml but in no group: an earlier kis remove deleted the
+	// key file and stopped before rotating (#10). Nothing here says which
+	// groups they could read, so no key is rotated now.
+	keyless := len(in) == 0
 	dropped := len(r.GroupsOf(name)) == 0
 	if dropped {
 		delete(rs, name)
@@ -881,12 +815,21 @@ func cmdRemove(args []string) error {
 	if _, err := r.Git("add", "-A", "--", repo.Dir); err != nil {
 		return err
 	}
-	if dropped {
+	if keyless {
+		fmt.Printf("  removed %s from the partner list\n", name)
+		warn("%s had no key file in any group, so no group key was rotated", name)
+		warn("if %s ever ran kis unlock, they can still decrypt new secrets: run `kis rotate` (every group you are in), and ask a member of each other group to run it too", name)
+		warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
+	} else if dropped {
 		step("removed %s", name)
 		warn("%s can still read every secret in past commits: change the real credentials (DB passwords, API keys)", name)
 	} else {
 		step("removed %s from %s", name, strings.Join(groups, ", "))
 		warn("%s can still read %s secrets in past commits: change the real credentials (DB passwords, API keys)", name, strings.Join(groups, ", "))
+	}
+	if keyless {
+		fmt.Println("\nCommit and push.")
+		return nil
 	}
 	fmt.Println("\nCommit and push. Partners who pull will get the new key automatically.")
 	return nil
@@ -932,14 +875,12 @@ func rotateGroup(r *repo.Repo, rs repo.Recipients, group string, force bool) err
 	if _, err := r.GroupKey(group); err != nil {
 		return err
 	}
+	if err := checkClean(r, group, force); err != nil {
+		return err
+	}
 	files, err := groupFiles(r, group)
 	if err != nil {
 		return err
-	}
-	if dirty, err := r.Dirty(files); err != nil {
-		return err
-	} else if len(dirty) > 0 && !force {
-		return fmt.Errorf("uncommitted changes in %s: commit them first or use --force", strings.Join(dirty, ", "))
 	}
 	if _, err := r.Refresh(files, false); err != nil { // working copies must be plaintext
 		return err
@@ -962,6 +903,26 @@ func rotateGroup(r *repo.Repo, rs repo.Recipients, group string, force bool) err
 		what = group
 	}
 	step("new %s key for %s; re-encrypted %d file(s)", what, strings.Join(members, ", "), len(files))
+	return nil
+}
+
+// checkClean refuses to rotate group while its tracked secrets have
+// uncommitted changes, unless force.
+func checkClean(r *repo.Repo, group string, force bool) error {
+	if force {
+		return nil
+	}
+	files, err := groupFiles(r, group)
+	if err != nil {
+		return err
+	}
+	dirty, err := r.Dirty(files)
+	if err != nil {
+		return err
+	}
+	if len(dirty) > 0 {
+		return fmt.Errorf("uncommitted changes in %s: commit them first or use --force", strings.Join(dirty, ", "))
+	}
 	return nil
 }
 
@@ -1402,19 +1363,11 @@ func printStatus(st statusJSON) {
 func cmdSync(args []string) error {
 	fs := newFlags("sync")
 	identityFlag(fs)
-	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
 	if pos := parseFlags(fs, args); len(pos) > 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	presets, err := parsePresets(*presetFlag)
-	if err != nil {
-		return err
-	}
 	r, err := openInitialized()
 	if err != nil {
-		return err
-	}
-	if err := applyPresets(r, presets); err != nil {
 		return err
 	}
 	if err := ensureGroups(r); err != nil {

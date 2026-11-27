@@ -32,6 +32,8 @@ is plaintext, git history and the remote only hold ciphertext.
   machine-readable output). It exits 1 and prints the fix if any secret would
   leave this machine in plaintext.
 - To encrypt another file, add its path to ~.gitencrypt~ and run ~kis sync~.
+  Common secret files per stack: [gitencrypt-patterns.md](https://github.com/juanfraherrero/keep-in-secret/blob/main/docs/gitencrypt-patterns.md).
+  Ask the developer when unsure: encrypting a file CI reads in plaintext breaks CI.
   Never edit the kis block in ~.gitattributes~ by hand.
 - A secret file that is binary and starts with ~KIS~ means this clone is locked,
   or isn't in that file's group (~.gitencrypt~ lines ending in ~@GROUP~). That is
