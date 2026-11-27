@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 )
@@ -86,32 +85,25 @@ func Supported(v [3]int) bool {
 	return true
 }
 
-// CheckVersion fails when the installed git is older than MinVersion, with
-// instructions for upgrading on this OS.
+// CheckVersion fails when the installed git is older than MinVersion.
 func CheckVersion() error {
 	v, err := Version()
 	if err != nil {
 		return err
 	}
+	return VersionError(v)
+}
+
+// VersionError explains why v is unsupported, or returns nil when it is
+// supported. It deliberately names no upgrade command: how to upgrade git
+// depends on the machine (package manager, admin rights, distro release), and
+// a command that may not work there must not be suggested (see CLAUDE.md).
+func VersionError(v [3]int) error {
 	if Supported(v) {
 		return nil
 	}
-	return fmt.Errorf("kis needs git %d.%d or newer (found %d.%d.%d): please upgrade git.\n%s",
-		MinVersion[0], MinVersion[1], v[0], v[1], v[2], UpgradeHint(runtime.GOOS))
-}
-
-// UpgradeHint tells the user how to get a current git on goos.
-func UpgradeHint(goos string) string {
-	switch goos {
-	case "darwin":
-		return "  macOS:   brew install git   (then open a new terminal and check `git --version`)"
-	case "windows":
-		return "  Windows: winget install --id Git.Git -e   (or download https://git-scm.com/download/win)"
-	default:
-		return "  Ubuntu:        sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git\n" +
-			"  Debian:        sudo apt install git   (Debian 11 and newer ship a supported git)\n" +
-			"  Fedora/RHEL:   sudo dnf install git\n" +
-			"  Alpine:        apk add git\n" +
-			"  Other:         https://git-scm.com/download/linux"
-	}
+	return fmt.Errorf("kis needs git %d.%d or newer (found %d.%d.%d).\n"+
+		"  Older git resolves `!` patterns in .gitattributes differently, which could encrypt the wrong files.\n"+
+		"  Upgrade git on this machine, then run this command again.",
+		MinVersion[0], MinVersion[1], v[0], v[1], v[2])
 }

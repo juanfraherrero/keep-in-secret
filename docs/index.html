@@ -689,7 +689,7 @@ footer .wrap { display: flex; justify-content: space-between; align-items: cente
       <div class="card hov sc reveal">
         <span class="n">01 · INSTALL</span>
         <h3>Everyone</h3>
-        <p>You need <strong>git 2.28 or newer</strong> (check with <code class="mono">git --version</code>; kis tells you how to upgrade if it's older). The script installs the latest release for macOS or Linux, <code class="mono">git kis</code> included. On Windows, grab the zip from the <a href="https://github.com/juanfraherrero/keep-in-secret/releases">releases</a>, or use <code class="mono">go install</code>.</p>
+        <p>You need <strong>git 2.28 or newer</strong> (check with <code class="mono">git --version</code>; kis stops and tells you if it's older). The script installs the latest release for macOS or Linux, <code class="mono">git kis</code> included. On Windows, grab the zip from the <a href="https://github.com/juanfraherrero/keep-in-secret/releases">releases</a>, or use <code class="mono">go install</code>.</p>
         <div class="code"><button class="copy" type="button">copy</button><pre><span class="k">curl</span> -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh</pre></div>
       </div>
       <div class="card hov sc reveal d1">
@@ -711,7 +711,7 @@ git clone … &amp;&amp; cd …
     </div>
 
     <div class="card cmds reveal">
-      <div class="cmd"><code>kis init</code><span>Set up encryption in the repo (<code class="mono">--ssh</code> to use your SSH key)</span></div>
+      <div class="cmd"><code>kis init</code><span>Set up encryption in the repo (<code class="mono">--identity ~/.ssh/id_ed25519</code> to use your SSH key)</span></div>
       <div class="cmd"><code>kis keygen</code><span>Create your personal age key and print the public key</span></div>
       <div class="cmd"><code>kis add NAME KEY</code><span>Give someone access: <code class="mono">age1…</code>, <code class="mono">github:USER</code> or <code class="mono">FILE.pub</code></span></div>
       <div class="cmd"><code>kis remove NAME</code><span>Revoke access and rotate the master key</span></div>

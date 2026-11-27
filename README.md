@@ -19,15 +19,18 @@ Terraform variables, Rails and Spring. Built to be driven by coding agents too:
 [see below](#coding-agents).
 
 **Website:** [juanfraherrero.github.io/keep-in-secret](https://juanfraherrero.github.io/keep-in-secret) ·
-**Deep dive:** [docs/how-it-works.md](docs/how-it-works.md)
+**Vision:** [docs/vision.md](docs/vision.md) ·
+**Deep dive:** [docs/how-it-works.md](docs/how-it-works.md) ·
+**Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ## Install
 
 > [!IMPORTANT]
 > **kis requires git 2.28 or newer.** Check with `git --version`. Older git
 > resolves `!` patterns in `.gitattributes` differently, which could encrypt the
-> wrong files, so `kis init` and `kis unlock` refuse to run on it and print the
-> upgrade command for your OS.
+> wrong files, so `kis init` and `kis unlock` refuse to run on it and tell you to
+> upgrade git. How to upgrade depends on your machine; see
+> [git-scm.com/downloads](https://git-scm.com/downloads).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/juanfraherrero/keep-in-secret/main/install.sh | sh
@@ -49,17 +52,6 @@ Everyone who works on the repository installs `kis` once, like `git-lfs`.
 | git | **2.28** | Tested in CI on 2.28, 2.30, 2.34, 2.39, 2.43, 2.45, 2.52 and 2.55 |
 | Go | 1.27 | Only to build from source; release binaries need nothing |
 | OS | macOS, Linux, Windows | All three run the full test suite in CI |
-
-### Upgrading git
-
-| OS | Command |
-|---|---|
-| macOS | `brew install git`, then open a new terminal |
-| Windows | `winget install --id Git.Git -e` or [git-scm.com](https://git-scm.com/download/win) |
-| Ubuntu | `sudo add-apt-repository ppa:git-core/ppa && sudo apt update && sudo apt install git` |
-| Debian | `sudo apt install git` (Debian 11 and newer ship a supported git) |
-| Fedora / RHEL | `sudo dnf install git` |
-| Alpine | `apk add git` |
 
 `kis status` shows the git version it found and flags it if it's too old.
 
@@ -109,13 +101,19 @@ and `kis unlock` wires it into their clone.
 ```sh
 cd my-repo
 kis init          # age key (created for you, or reuse an existing one)
-kis init --ssh    # or: use ~/.ssh/id_ed25519 and make SSH the default for partners
+kis init --identity ~/.ssh/id_ed25519   # or: use your SSH key; partners are then told to send theirs
 git commit -m "Set up kis encryption" && git push
 ```
 
 `kis init` creates `.gitencrypt` (`.env`, `.env.*`, except `.env.example`), encrypts
 matching files, offers to un-ignore `.env` from `.gitignore`, adds the kis section
 to `AGENTS.md`, and prints the instructions to send to partners.
+
+`--name` is how partners will see you: it is committed in `.kis/recipients.toml`
+and names your key file, `.kis/keys/NAME.age`. Without it, kis suggests the part
+of your git email before the `@` (asking you to confirm when there is a terminal,
+using it as is when there isn't). To change it later, see
+[troubleshooting](docs/troubleshooting.md#my-name-in-the-repository-is-wrong).
 
 ## Onboarding a partner
 
@@ -292,7 +290,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 
 | Command | What it does |
 |---|---|
-| `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
+| `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]` | Set up encryption in the repo |
 | `kis keygen [--force]` | Create your personal age key, print the public key |
 | `kis pubkey` | Print the public keys found on this machine |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G]` | Give someone access (to a group; omit the key for an existing partner) |
@@ -306,6 +304,21 @@ and every error names the command that fixes it. A summary for LLMs lives at
 
 ## Keys
 
+kis accepts **only three kinds of keys**, because it shares the repository key
+with [age](https://age-encryption.org), and these are the only ones age can
+encrypt to:
+
+| Key | Public key starts with | Where it comes from |
+|---|---|---|
+| age X25519 | `age1…` | `kis keygen` (recommended) |
+| SSH ed25519 | `ssh-ed25519 …` | `ssh-keygen -t ed25519`, or `github:USER` |
+| SSH RSA | `ssh-rsa …` | `ssh-keygen -t rsa`, or `github:USER` |
+
+Not supported: **ECDSA** (`ecdsa-sha2-…`), **security keys** (`sk-ssh-…`,
+`sk-ecdsa-…`) and **DSA**. kis refuses them with
+`unsupported key type`, before writing anything; `github:USER` skips them.
+If your only key is one of these, use `kis keygen`.
+
 - **age keys** (`kis keygen`): modern X25519, single-purpose. The file is
   unencrypted at rest, so protect your laptop.
 - **SSH keys** (ed25519 or RSA): reuse what you already have; `github:USER` pulls
@@ -318,6 +331,41 @@ and every error names the command that fixes it. A summary for LLMs lives at
   passphrase, in an environment variable. For CI and cloud agents; while it is
   set, key files are ignored.
 
+### `github:USER`: every key on the account
+
+`kis add ana github:ana` downloads `https://github.com/ana.keys`, the public SSH
+keys GitHub publishes for every account, and gives access to **all** the
+ed25519 and RSA keys there. That is what makes it seamless: Ana can unlock from
+any machine she pushes code from. The trade-offs:
+
+- Access is only as safe as the **least protected** of those keys (an old
+  laptop, a key copied to a server).
+- kis reads them **once**. Removing a key on GitHub doesn't revoke it here:
+  run `kis add ana github:ana --force` to pick up her current keys, then
+  `kis rotate`, because the removed key could already open the repository key.
+- GitHub doesn't publish key titles, so `recipients.toml` can't tell which key
+  belongs to which machine.
+
+When kis gets more than one key it says so. For narrow access, ask the person
+for one public key and use that instead: `kis add ana KEY --force`.
+
+### Keys in other places: `--identity`
+
+kis looks for your private key in `$KIS_IDENTITY`, `~/.config/kis/identity`,
+`~/.ssh/id_ed25519` and `~/.ssh/id_rsa`, in that order. For a key anywhere else
+(`~/.ssh/id_ed25519_work`, one key per client…), pass it with `--identity PATH`.
+`PATH` is always your **private** key file, also at `kis init` (kis derives the
+public key from it; a `.pub` file is rejected).
+
+kis does not remember that path ([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)):
+
+- Pass it again on every `kis unlock`: `kis unlock --identity PATH`. That uses
+  only that file, even over `KIS_PRIVATE_KEY`.
+- Or set `KIS_IDENTITY=PATH` in your shell profile. kis then tries that file
+  first, on every command. It is also the only way to create a group
+  (`kis sync` with a new `@group`, `kis add NAME --group NEW`), since those
+  commands have no `--identity` flag.
+
 Each partner can use either type; `default_key` in `.kis/config.toml` only decides
 what kis suggests to new partners.
 
@@ -325,6 +373,11 @@ what kis suggests to new partners.
 
 - Anyone who could unlock the repo can read every secret in **past commits**.
   `kis remove` rotates the key for future commits; also rotate the real credentials.
+- **Secrets committed before kis stay in history.** `kis init` only checks the
+  last commit: it warns about files listed in `.gitencrypt` that are tracked
+  and stored there in plaintext. A secret committed earlier, on another branch,
+  under another name, or already removed from git is not detected. If a secret
+  was ever committed in plaintext, it is still in the history: rotate it.
 - File names and sizes are visible, and anyone can see *when* an encrypted file
   changed (not what changed).
 - Secrets are only as safe as the least protected machine holding a key.

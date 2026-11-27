@@ -9,9 +9,10 @@ chmod 755 $WORK/fakegit/git
 exec git version
 stdout 'git version 2.25.1'
 ! exec kis init -y
-stderr 'kis needs git 2.28 or newer \(found 2.25.1\): please upgrade git'
-[darwin] stderr 'brew install git'
-[linux] stderr 'ppa:git-core/ppa'
+stderr 'kis needs git 2.28 or newer \(found 2.25.1\)'
+stderr 'Upgrade git on this machine'
+# No upgrade command: it may not work on this machine (see CLAUDE.md).
+! stderr 'brew|winget|apt|dnf|apk|sudo'
 ! exists .kis
 ! exec kis unlock
 stderr 'kis needs git 2.28 or newer'

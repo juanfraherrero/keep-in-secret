@@ -50,6 +50,17 @@ var validGroup = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // Parse reads .gitencrypt. A line may end in " @GROUP" to encrypt its files
 // with that group's key instead of the default one. Malformed lines are
 // reported in errs and parsed as best as possible, so Block stays total.
+// looksLikeGroup reports whether a pattern still contains a word starting
+// with "@" after whitespace, like ".env.prod @bad group".
+func looksLikeGroup(pattern string) bool {
+	for _, f := range strings.Fields(pattern)[1:] {
+		if strings.HasPrefix(f, "@") {
+			return true
+		}
+	}
+	return false
+}
+
 func Parse(content string) (rules []Rule, errs []error) {
 	for n, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -68,6 +79,12 @@ func Parse(content string) (rules []Rule, errs []error) {
 				errs = append(errs, fmt.Errorf("%s:%d: a file belongs to one group; add people to that group instead of listing several", FileName, n+1))
 				line = strings.TrimSpace(line[:j])
 			}
+		}
+		// " @" left in the pattern is a group written wrongly (a name with a
+		// space, "@bad group"), not a file name: without this the whole line
+		// becomes a pattern that matches nothing, and the file stays plaintext.
+		if looksLikeGroup(line) {
+			errs = append(errs, fmt.Errorf("%s:%d: %q looks like a group, but group names are one word (letters, digits, '.', '_' or '-'): write PATTERN @GROUP", FileName, n+1, line))
 		}
 		r.Negate = strings.HasPrefix(line, "!")
 		r.Pattern = strings.TrimPrefix(line, "!")

@@ -1,0 +1,37 @@
+# A group name with a space (".env.prod @bad group") is a typo, not a file
+# name. kis reports it everywhere instead of treating the whole line as a
+# pattern that matches nothing. Silently, .env.prod would not be in the group
+# meant: here it falls back to .env.* (readable by every partner); with no
+# other matching line it would stay plaintext.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git commit -qm init
+
+cp $WORK/typo .gitencrypt
+! exec kis sync
+stderr '\.gitencrypt:3: ".env.prod @bad group" looks like a group, but group names are one word'
+! exec kis status --check
+stdout 'looks like a group'
+! exec git commit -qam 'typo'
+stderr 'commit blocked, \.gitencrypt has errors'
+
+# Fixed, everything works again.
+cp $WORK/fixed .gitencrypt
+exec kis sync
+stdout 'created group prod'
+exec kis status --check
+
+-- app/.env --
+A=1
+-- app/.env.prod --
+P=1
+-- typo --
+.env
+.env.*
+.env.prod @bad group
+-- fixed --
+.env
+.env.*
+.env.prod @prod

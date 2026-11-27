@@ -13,7 +13,10 @@ stdout '! ignored by \.gitignore: \.env'
 stdout '✓ un-ignored them in \.gitignore'
 stdout '✓ staged encrypted: \.env'
 stdout 'Next steps:'
-stdout 'They run `kis keygen`'
+stdout '1\. Check what is encrypted: +kis status'
+stdout '2\. Commit the setup and push it\.'
+stdout '3\. Give partners access: +kis add NAME KEY +\(key formats: kis add -h\)'
+! stdout 'git push'
 ! stderr .
 
 # Exactly these files appear or change in the repo.
@@ -64,6 +67,13 @@ stored HEAD .env
 ! stored HEAD .env.example README.md
 exec git status --porcelain
 ! stdout .
+
+# kis add -h explains every key format the next steps point to.
+exec kis add -h
+stderr 'Usage: kis add NAME'
+stderr 'age1… +an age key; they create one with `kis keygen`'
+stderr 'github:USER +every ed25519/RSA key on that GitHub account'
+stderr 'FILE\.pub +a file with one or more public keys'
 
 # A second init is refused.
 ! exec kis init -y

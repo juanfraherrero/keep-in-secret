@@ -1,0 +1,145 @@
+# kis init when keys or kis files already exist. init never overwrites a
+# personal key, never re-initialises a repository someone already set up,
+# and refuses a repository that lost .kis/config.toml.
+
+# --- 1. A personal key already exists (kis keygen, or another repository) ---
+# init reuses it: no new key, the file is untouched, its public key is used.
+cd app
+exec git init -q
+exec kis keygen
+pubkey MY_KEY
+cp $KIS_KEY $WORK/key-before
+exec kis init -y --name owner
+! stdout 'created your key'
+stdout '✓ created repository key, encrypted for owner \(age key .*identity\)'
+cmp $KIS_KEY $WORK/key-before
+grep $MY_KEY .kis/recipients.toml
+
+# The same key serves a second repository: one personal key per machine,
+# one master key per repository.
+cd $WORK/app2
+exec git init -q
+exec kis init -y --name owner
+! stdout 'created your key'
+cmp $KIS_KEY $WORK/key-before
+grep $MY_KEY .kis/recipients.toml
+! cmp .git/kis/key $WORK/app/.git/kis/key
+
+# --- 2. The personal key file is corrupted ---
+# init says where the key is and that it can't be opened, and how to recover.
+# Neither the key file nor the repository is touched.
+as broken
+exec kis keygen
+cp $WORK/garbage $KIS_KEY
+cd $WORK/app3
+exec git init -q
+snapshot before
+! exec kis init -y --name broken
+stderr 'found a key file at .*identity, but it can.t be opened as an age or SSH private key: check that the file isn.t corrupted'
+stderr 'Restore it from a backup'
+stderr 'kis keygen --force'
+stderr 'their files are not re-encrypted'
+! stderr 'kis init'
+cmp $KIS_KEY $WORK/garbage
+changed before
+
+# --- 3. The repository is already set up (a clone of a kis repository) ---
+# Wrapped keys and other partners' public keys are there: init refuses and
+# points to unlock instead. Nothing changes.
+as owner
+cd $WORK/app
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+as ana
+exec kis keygen
+pubkey ANA_KEY
+cd $WORK
+exec git clone -q $REMOTE ana-clone
+cd ana-clone
+snapshot before
+! exec kis init -y --name ana
+stderr 'kis is already set up here'
+stderr 'kis unlock'
+changed before
+grep '^owner = ' .kis/recipients.toml
+! grep $ANA_KEY .kis/recipients.toml
+
+# --- 4. .kis/config.toml is lost ---
+# Re-initialising would replace the master key, drop ana from
+# recipients.toml and leave ana.age holding the old key, so ana would
+# "unlock" with a key that no longer opens anything.
+as owner
+cd $WORK/app
+exec kis add ana $ANA_KEY
+exec git commit -qm 'add ana'
+
+# The file gets deleted and committed (by a person, an agent, a bad merge).
+# Every command then says the repository is broken instead of suggesting
+# kis init, and changes nothing.
+exec git rm -q .kis/config.toml
+exec git commit -qm 'lose config'
+snapshot before
+! exec kis init -y --name owner
+stderr '\.kis/config\.toml is missing'
+stderr 'Don.t run kis init again'
+! exec kis unlock
+stderr '\.kis/config\.toml is missing'
+! stderr 'run `kis init`'
+! exec kis add bob $ANA_KEY
+stderr '\.kis/config\.toml is missing'
+! exec kis status
+stderr '\.kis/config\.toml is missing'
+! exec kis status --json
+stdout '"initialized": false'
+stdout '"path": "\.kis/config\.toml"'
+stdout 'restore \.kis/config\.toml from git history'
+changed before
+grep '^ana = ' .kis/recipients.toml
+exists .kis/keys/ana.age
+
+# Restoring the file is all it takes.
+exec git checkout HEAD~1 -- .kis/config.toml
+exec kis status --check
+
+# --- 5. --identity points at a file that isn't a private key ---
+# The same clear message as a corrupted key, or "this is a public key".
+cd $WORK/app4
+exec git init -q
+snapshot before
+# An ECDSA key is a valid SSH key, but age can't encrypt to it: refused
+# before anything is written.
+! exec kis init -y --name owner --identity $WORK/ec_key
+stderr 'unsupported key type "ecdsa-sha2-nistp256": use an ed25519 or RSA SSH key, or `kis keygen`'
+changed before
+! exists .gitencrypt
+! exec kis init -y --name owner --identity $WORK/app/.kis/recipients.toml
+stderr 'can.t be opened as an age or SSH private key'
+changed before
+exec kis pubkey
+cp stdout $WORK/my.pub
+! exec kis init -y --name owner --identity $WORK/my.pub
+stderr 'my\.pub is a public key; pass the private key file instead'
+changed before
+
+-- app/.env --
+A=1
+-- app2/.env --
+B=2
+-- app3/.env --
+C=3
+-- app4/.env --
+D=4
+-- garbage --
+this is not a key
+-- ec_key --
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTGLty+Nu3S9+WjMSVT+8qmNHftT1s2
+8RA9tLAvDc3i9keI8IkJwLVceQz++jRQ58WR8ZHFN2nk1Ga3vby7jTlAAAAAqHzykbt88p
+G7AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMYu3L427dL35aMx
+JVP7yqY0d+1PWzbxED20sC8NzeL2R4jwiQnAtVx5DP76NFDnxZHxkcU3aeTUZre9vLuNOU
+AAAAAgI7zH3usPCbGs1RS9hSxXIO0wvm6jW1+Ly9yUmyQ/G2UAAAAJdGVzdC1vbmx5AQID
+BAUGBw==
+-----END OPENSSH PRIVATE KEY-----

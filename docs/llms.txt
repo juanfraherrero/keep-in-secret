@@ -30,6 +30,13 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
 - A secret file that is binary and starts with the bytes `\0KIS\0v1\0` means
   this clone is locked. `kis unlock` needs the developer's private key; ask
   them rather than working around it.
+- If the developer's private key is not in a standard place (`$KIS_IDENTITY`,
+  `~/.config/kis/identity`, `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`), run
+  `kis unlock --identity PATH`, where PATH is their **private** key file (ask
+  them for the path; never guess or search for keys). kis does not remember
+  it: pass it on every `kis unlock`, or have the developer set
+  `KIS_IDENTITY=PATH`, which creating a group (`@GROUP`) also needs.
+  `kis init --identity PATH` takes the same private key file, not a `.pub`.
 - On CI or a cloud agent, `kis unlock` reads the private key from the
   `KIS_PRIVATE_KEY` environment variable. If it is missing, ask the developer
   to run `kis add NAME --new-key` and store the printed key as that secret;
@@ -46,6 +53,8 @@ Every prompt takes its default without a terminal; `-y` forces it.
 
 ```sh
 kis init -y --name NAME              # creates .gitencrypt, key, AGENTS.md section
+                                     # NAME: how partners will see the developer (committed);
+                                     # without --name, the git email before the @ is used
 kis init -y --name NAME --preset terraform,android
 git commit -m "Set up kis encryption" && git push
 kis add PARTNER age1…|github:USER|key.pub   # then commit and push
@@ -69,14 +78,14 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 
 ## Commands
 
-- `kis init [--ssh] [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
+- `kis init [--identity PATH] [--name NAME] [--preset LIST] [--no-agents] [-y]`: set up encryption
 - `kis status [--check] [--json] [--since REV]`: state and whether it is safe to push
 - `kis sync [--preset LIST]`: apply `.gitencrypt` edits and re-encrypt
-- `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent
+- `kis add NAME [KEY|github:USER|FILE.pub|--new-key] [--group G]`: give a partner access, optionally to a group; `--new-key` makes a key for CI or a cloud agent. `github:USER` grants access to every ed25519/RSA key on that GitHub account, read once; for a single key, ask the person for it
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
 - `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone
-- `kis keygen`, `kis pubkey`: personal key management
+- `kis keygen`, `kis pubkey`: personal key management. Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
 
 ## Docs
 

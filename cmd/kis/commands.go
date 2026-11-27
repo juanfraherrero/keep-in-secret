@@ -27,6 +27,9 @@ func openInitialized() (*repo.Repo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Broken() {
+		return nil, repo.ErrBroken
+	}
 	if !r.Initialized() {
 		return nil, repo.ErrNotInitialized
 	}
@@ -37,7 +40,6 @@ func openInitialized() (*repo.Repo, error) {
 
 func cmdInit(args []string) error {
 	fs := newFlags("init")
-	useSSH := fs.Bool("ssh", false, "use your SSH key (~/.ssh/id_ed25519) and make SSH the default for partners")
 	identity := fs.String("identity", "", "private key file to use (age or SSH)")
 	name := fs.String("name", "", "your name in the recipients list")
 	presetFlag := fs.String("preset", "", "also encrypt a stack's secret files: "+presetNames()+" (comma-separated)")
@@ -61,10 +63,21 @@ func cmdInit(args []string) error {
 	if r.Initialized() {
 		return errors.New("kis is already set up here (.kis/ exists).\n  Need access?        kis unlock\n  Add a partner:      kis add NAME KEY")
 	}
+	// A .kis/ without config.toml was set up before and lost a file. A new
+	// init would replace the master key, rewrite recipients.toml with only
+	// you, and leave the other partners' .age files holding the old key.
+	if r.Broken() {
+		return repo.ErrBroken
+	}
 
 	fmt.Println("Setting up kis encryption in", r.Root)
-	keyPath, pub, keyType, err := chooseIdentity(*useSSH, *identity)
+	keyPath, pub, keyType, err := chooseIdentity(*identity)
 	if err != nil {
+		return identityError(err, keyPath)
+	}
+	// Only age, ssh-ed25519 and ssh-rsa keys can receive the repository key.
+	// Check before writing anything, so an ECDSA or sk- key leaves no files.
+	if _, err := keys.ParseRecipient(pub); err != nil {
 		return err
 	}
 	me := *name
@@ -134,7 +147,6 @@ func cmdInit(args []string) error {
 		warn("they are encrypted from now on, but old commits still contain them: rotate those secrets")
 	}
 
-	cfg := repo.Config{DefaultKey: keyType}
 	if interactive() && confirm("Add partners now?", false) {
 		for {
 			pname := ask("Partner name (empty to finish)", "")
@@ -153,12 +165,25 @@ func cmdInit(args []string) error {
 	}
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Commit and push:   git commit -m \"Set up kis encryption\" && git push")
-	fmt.Println("  2. Ask each partner to install kis and send you their public key:")
-	printPartnerKeyInstructions(cfg)
-	fmt.Println("  3. Give them access:  kis add NAME KEY   (then commit and push)")
-	fmt.Println("  4. They clone and run: kis unlock")
+	fmt.Println("  1. Check what is encrypted:   kis status")
+	fmt.Println("  2. Commit the setup and push it.")
+	fmt.Println("  3. Give partners access:      kis add NAME KEY   (key formats: kis add -h)")
+	fmt.Println("  4. Partners clone and run:    kis unlock")
 	return nil
+}
+
+// identityError adds what to do when your own key file can't be opened.
+// Only kis's personal key file can be replaced by kis itself.
+func identityError(err error, path string) error {
+	if !errors.Is(err, keys.ErrUnreadableKey) {
+		return err
+	}
+	if path == keys.DefaultAgeIdentityPath() {
+		return fmt.Errorf("%w\n  Restore it from a backup if you have one, or replace it with a new key:\n"+
+			"    kis keygen --force   (keeps the old file as identity.bak)\n"+
+			"  Repositories you were already in then need a partner to run kis add YOUR_NAME NEW_KEY --force; their files are not re-encrypted", err)
+	}
+	return fmt.Errorf("%w\n  Restore it from a backup if you have one, or pick another key with --identity PATH", err)
 }
 
 func presetNames() string {
@@ -267,26 +292,12 @@ func ensureGroups(r *repo.Repo) error {
 	return nil
 }
 
-func chooseIdentity(useSSH bool, explicit string) (path, pub, keyType string, err error) {
+func chooseIdentity(explicit string) (path, pub, keyType string, err error) {
 	if explicit != "" {
 		pub, err = keys.PublicKey(explicit)
 		return explicit, pub, keys.RecipientType(pub), err
 	}
 	cands := keys.Candidates()
-	if useSSH {
-		for _, c := range cands {
-			if c.Type == keys.TypeSSH {
-				pub, err = keys.PublicKey(c.Path)
-				if err == nil {
-					if _, perr := keys.ParseRecipient(pub); perr != nil {
-						err = perr
-					}
-				}
-				return c.Path, pub, keys.TypeSSH, err
-			}
-		}
-		return "", "", "", errors.New("no SSH key found in ~/.ssh: create one with `ssh-keygen -t ed25519`, or run `kis init` without --ssh")
-	}
 
 	options := make([]string, 0, len(cands)+1)
 	def := len(cands) // "create new" unless an age key exists
@@ -335,18 +346,6 @@ func defaultName(r *repo.Repo) string {
 
 func sanitizeName(s string) string {
 	return regexp.MustCompile(`[^A-Za-z0-9._-]+`).ReplaceAllString(strings.ToLower(s), "-")
-}
-
-func printPartnerKeyInstructions(cfg repo.Config) {
-	if cfg.DefaultKey == keys.TypeSSH {
-		fmt.Println("       This repo uses SSH keys. They send you ~/.ssh/id_ed25519.pub")
-		fmt.Printf("       (Windows: %s), or you run: kis add NAME github:THEIR_USER\n", `%USERPROFILE%\.ssh\id_ed25519.pub`)
-		fmt.Println("       No SSH key yet? `ssh-keygen -t ed25519`, or `kis keygen` for a kis key.")
-		return
-	}
-	fmt.Println("       They run `kis keygen` and send you the age1… line it prints.")
-	fmt.Println("       (Key is stored in ~/.config/kis/identity on macOS/Linux, %APPDATA%\\kis\\identity on Windows.)")
-	fmt.Println("       Already have an SSH key? `kis add NAME github:THEIR_USER` works too.")
 }
 
 // wireGit installs the filter config and pre-commit hook on this machine.
@@ -637,10 +636,14 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 	case exists && !force:
 		return fmt.Errorf("%s already has access; use --force to replace their keys, or omit the key to add them to a group: kis add %s --group GROUP", name, name)
 	}
+	var fromGitHub []string // github:USER arguments that returned several keys
 	for _, a := range keyArgs {
 		p, err := keys.ResolveRecipients(a)
 		if err != nil {
 			return err
+		}
+		if strings.HasPrefix(a, "github:") && len(p) > 1 {
+			fromGitHub = append(fromGitHub, fmt.Sprintf("%s (%d keys)", a, len(p)))
 		}
 		pubs = append(pubs, p...)
 	}
@@ -687,6 +690,12 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 		in = " to " + strings.Join(groups, ", ")
 	}
 	step("added %s%s (%d key(s), %s)", name, in, len(pubs), keys.RecipientType(pubs[0]))
+	// Every key on a GitHub account can unlock: access is only as safe as the
+	// least protected of them, and removing one on GitHub doesn't revoke it.
+	if len(fromGitHub) > 0 {
+		note("%s: every one of these keys can unlock. To allow a single key, ask %s for it and run: kis add %s KEY --force",
+			strings.Join(fromGitHub, ", "), name, name)
+	}
 	return nil
 }
 
@@ -1097,6 +1106,13 @@ func cmdStatus(args []string) error {
 			printJSON(statusJSON{Version: version, Scope: statusScope, Encrypted: []string{}, Files: []repo.FileStatus{}, Problems: []repo.Problem{}})
 			return exitError{}
 		}
+		if *asJSON && errors.Is(err, repo.ErrBroken) {
+			printJSON(statusJSON{Version: version, Scope: statusScope, Encrypted: []string{}, Files: []repo.FileStatus{},
+				Problems: []repo.Problem{{Severity: repo.SeverityError, Path: ".kis/config.toml",
+					Message: "kis was set up here, but this file is missing; don't run kis init again, it would drop the partners",
+					Fix:     "restore .kis/config.toml from git history"}}})
+			return exitError{}
+		}
 		return err
 	}
 	if *asJSON {
@@ -1204,7 +1220,7 @@ func collectStatus(since string) (statusJSON, error) {
 	}
 	if st.Git != nil && !st.Git.Supported {
 		st.Problems = append(st.Problems, repo.Problem{Severity: repo.SeverityWarning,
-			Message: fmt.Sprintf("git %s is too old: kis needs %d.%d+", st.Git.Version, gitx.MinVersion[0], gitx.MinVersion[1]), Fix: "upgrade git (run `kis unlock` for the steps on this OS)"})
+			Message: fmt.Sprintf("git %s is too old: kis needs %d.%d+", st.Git.Version, gitx.MinVersion[0], gitx.MinVersion[1]), Fix: fmt.Sprintf("upgrade git to %d.%d or newer", gitx.MinVersion[0], gitx.MinVersion[1])})
 	}
 	st.SafeToPush = repo.Audit{Problems: st.Problems}.Safe()
 	if st.Problems == nil {
@@ -1239,7 +1255,7 @@ func printStatus(st statusJSON) {
 	if st.Git != nil {
 		note := "ok"
 		if !st.Git.Supported {
-			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+ (run `kis unlock` for upgrade steps)", gitx.MinVersion[0], gitx.MinVersion[1])
+			note = fmt.Sprintf("TOO OLD: kis needs %d.%d+, upgrade git", gitx.MinVersion[0], gitx.MinVersion[1])
 		}
 		fmt.Printf("git             %s %s\n", st.Git.Version, note)
 	}

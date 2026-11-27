@@ -31,6 +31,13 @@ var ErrLocked = errors.New("repository is locked: run `kis unlock`")
 var ErrNotInitialized = errors.New("kis is not set up in this repository: run `kis init`")
 var ErrNoAccess = errors.New("none of your keys can unlock this repository")
 
+// ErrBroken is a repository that was set up with kis but lost .kis/config.toml.
+// Every command refuses it: kis init would replace the master key and drop
+// the partners, and the others would act on an incomplete setup.
+var ErrBroken = errors.New("kis was set up in this repository, but .kis/config.toml is missing (deleted, or lost in a merge).\n" +
+	"  Restore .kis/config.toml from git history; kis commands refuse to run until then.\n" +
+	"  Don't run kis init again: it would replace the repository key and drop the partners in .kis/recipients.toml.")
+
 type Config struct {
 	Version    int    `toml:"version"`
 	DefaultKey string `toml:"default_key"`
@@ -67,10 +74,24 @@ func (r *Repo) Initialized() bool {
 	return err == nil
 }
 
+// Broken reports a .kis/ directory without config.toml: kis was set up here
+// and a file was lost. config.toml is written by every successful kis init,
+// so its absence next to other kis files always means damage.
+func (r *Repo) Broken() bool {
+	if r.Initialized() {
+		return false
+	}
+	_, err := os.Stat(r.path(Dir))
+	return err == nil
+}
+
 func (r *Repo) LoadConfig() (Config, error) {
 	var c Config
 	if _, err := toml.DecodeFile(r.path(configFile), &c); err != nil {
 		if os.IsNotExist(err) {
+			if r.Broken() {
+				return c, ErrBroken
+			}
 			return c, ErrNotInitialized
 		}
 		return c, err
@@ -533,10 +554,21 @@ func (r *Repo) Dirty(paths []string) ([]string, error) {
 
 // Renormalize re-runs the clean filter on tracked secrets and stages the result.
 func (r *Repo) Renormalize(paths []string) error {
-	if len(paths) == 0 {
+	// A tracked file missing from disk is a deletion in progress: git add
+	// would fail ("unable to stat") and there is nothing to encrypt. Its
+	// index entry stays as is; kis status reports it if it is plaintext (#16).
+	var present []string
+	for _, p := range paths {
+		if _, err := os.Lstat(r.path(p)); err == nil {
+			present = append(present, p)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if len(present) == 0 {
 		return nil
 	}
-	_, err := r.Git(append([]string{"add", "--renormalize", "--"}, paths...)...)
+	_, err := r.Git(append([]string{"add", "--renormalize", "--"}, present...)...)
 	return err
 }
 

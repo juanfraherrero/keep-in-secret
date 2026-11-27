@@ -22,7 +22,7 @@ stderr 'Add and encrypt \.env now\? \[Y/n\]: '
 stderr 'Add partners now\? \[y/N\]: '
 stderr 'Partner name \(empty to finish\): '
 stdout '✓ added ana \(1 key\(s\), ssh\)'
-stdout 'This repo uses SSH keys'
+! stdout 'every one of these keys'
 
 # The menu choice was honoured: no kis key was generated.
 ! exists $KIS_KEY

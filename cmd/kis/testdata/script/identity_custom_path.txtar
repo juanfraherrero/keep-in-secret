@@ -1,0 +1,64 @@
+# --identity with a key outside the standard places (~/.config/kis/identity,
+# ~/.ssh/id_ed25519, ~/.ssh/id_rsa). kis uses it, but doesn't remember the
+# path (issue #9): every later unlock needs --identity again, or KIS_IDENTITY,
+# and creating a group needs KIS_IDENTITY.
+
+sshkey owner@work $WORK/keys/work_ed25519
+
+# init with the custom key: no kis key is created, the work key is the
+# repository's recipient, and partners are told to use SSH keys.
+cd app
+exec git init -q
+exec kis init -y --name owner --identity $WORK/keys/work_ed25519
+stdout 'encrypted for owner \(ssh key .*keys[/\\]work_ed25519\)'
+! stdout 'created your key'
+! exists $KIS_KEY
+grep '^owner = \["ssh-ed25519 AAAA[^"]+ owner@work"\]$' .kis/recipients.toml
+grep 'default_key = "ssh"' .kis/config.toml
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+# A second clone: unlock without the flag finds no key.
+cd $WORK
+exec git clone -q $REMOTE second
+cd second
+encrypted .env
+! exec kis unlock
+stderr 'no key found on this machine'
+encrypted .env
+
+# Passing the path again works, and uses only that file.
+exec kis unlock --identity $WORK/keys/work_ed25519
+stdout 'unlocked as owner; decrypted 1 file\(s\)'
+cmp .env $WORK/env
+
+# KIS_IDENTITY makes the path stick for every command.
+exec kis lock
+encrypted .env
+env KIS_IDENTITY=$WORK/keys/work_ed25519
+exec kis unlock
+stdout 'unlocked as owner'
+cmp .env $WORK/env
+
+# Creating a group must know which partner you are: without KIS_IDENTITY
+# kis can't find your key, and there is no --identity flag on sync.
+env KIS_IDENTITY=
+cp $WORK/gitencrypt-with-group .gitencrypt
+! exec kis sync
+stderr 'creating group prod: none of this machine.s keys belongs to a partner'
+! exists .kis/keys/prod
+env KIS_IDENTITY=$WORK/keys/work_ed25519
+exec kis sync
+stdout 'created group prod with you \(owner\) as its member'
+exists .kis/keys/prod/owner.age
+
+-- app/.env --
+TOKEN=abc
+-- env --
+TOKEN=abc
+-- gitencrypt-with-group --
+.env
+.env.*
+!.env.example
+.env.prod @prod

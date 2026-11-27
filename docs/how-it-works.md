@@ -5,7 +5,7 @@ This page covers how kis is built. For everyday use, see the [README](../README.
 > **Requirement: git 2.28 or newer.** Older git resolves negated `.gitattributes`
 > patterns differently (found by the differential test in §6), which could encrypt
 > the wrong set of files. `kis init` and `kis unlock` check `git version` and refuse,
-> printing the upgrade command for the current OS; `kis status` shows the version.
+> saying git must be upgraded (no command: how depends on the machine); `kis status` shows the version.
 
 kis does two jobs:
 
@@ -222,7 +222,12 @@ Each person brings one private key:
 | SSH ed25519 / RSA | `~/.ssh/id_ed25519`, `~/.ssh/id_rsa` | Read directly; no ssh-agent. Passphrases are prompted for at unlock |
 
 Lookup order: `$KIS_IDENTITY`, the kis age identity, `id_ed25519`, then `id_rsa`.
-ECDSA and `sk-` (security key) keys are rejected, because age can't encrypt to them.
+`--identity PATH` (on `init` and `unlock`) skips the lookup and uses only that
+private key file. The path is not stored anywhere; only the public key is
+([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)).
+Only age X25519, SSH ed25519 and SSH RSA keys are accepted (`keys.ParseRecipient`).
+ECDSA, `sk-` (security key) and DSA keys are rejected, because age can't encrypt
+to them; `kis init` checks this before writing anything.
 
 ### Wrapping
 
@@ -239,7 +244,9 @@ partner's public key(s), ASCII-armored, and committed:
 ```
 
 `kis add ana github:ana` fetches `https://github.com/ana.keys` and keeps only the
-ed25519 and RSA keys.
+ed25519 and RSA keys. All of them become ana's recipients, so any one unlocks
+(one age stanza per key in `ana.age`). The download is capped at 1 MiB and
+happens only at `kis add`; later changes on GitHub are not picked up.
 
 **Groups.** Each group's master key is wrapped the same way, under its own
 folder; membership is just which files exist:
