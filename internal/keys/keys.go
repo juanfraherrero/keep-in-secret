@@ -256,7 +256,7 @@ func ParseRecipient(s string) (age.Recipient, error) {
 		return age.ParseX25519Recipient(s)
 	case strings.HasPrefix(s, "ssh-ed25519 "), strings.HasPrefix(s, "ssh-rsa "):
 		return agessh.ParseRecipient(s)
-	case strings.HasPrefix(s, "sk-"), strings.HasPrefix(s, "ecdsa-"):
+	case strings.HasPrefix(s, "sk-"), strings.HasPrefix(s, "ecdsa-"), strings.HasPrefix(s, "ssh-dss "):
 		return nil, fmt.Errorf("unsupported key type %q: use an ed25519 or RSA SSH key, or `kis keygen`", strings.Fields(s)[0])
 	}
 	return nil, fmt.Errorf("not a public key: %q", truncate(s))

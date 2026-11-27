@@ -225,7 +225,9 @@ Lookup order: `$KIS_IDENTITY`, the kis age identity, `id_ed25519`, then `id_rsa`
 `--identity PATH` (on `init` and `unlock`) skips the lookup and uses only that
 private key file. The path is not stored anywhere; only the public key is
 ([#9](https://github.com/juanfraherrero/keep-in-secret/issues/9)).
-ECDSA and `sk-` (security key) keys are rejected, because age can't encrypt to them.
+Only age X25519, SSH ed25519 and SSH RSA keys are accepted (`keys.ParseRecipient`).
+ECDSA, `sk-` (security key) and DSA keys are rejected, because age can't encrypt
+to them; `kis init` checks this before writing anything.
 
 ### Wrapping
 

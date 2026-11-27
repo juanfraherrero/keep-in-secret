@@ -155,3 +155,19 @@ func TestFormatV1Frozen(t *testing.T) {
 		}
 	}
 }
+
+// Only age, ssh-ed25519 and ssh-rsa keys are accepted; the SSH types age
+// can't encrypt to are refused by name, not as "not a public key".
+func TestParseRecipientUnsupportedTypes(t *testing.T) {
+	for _, k := range []string{
+		"ecdsa-sha2-nistp256 AAAAE2VjZHNh x",
+		"sk-ssh-ed25519@openssh.com AAAAGnNr x",
+		"sk-ecdsa-sha2-nistp256@openssh.com AAAAInNr x",
+		"ssh-dss AAAAB3NzaC1kc3M x",
+	} {
+		_, err := ParseRecipient(k)
+		if err == nil || !strings.Contains(err.Error(), "unsupported key type") {
+			t.Errorf("ParseRecipient(%q) = %v, want unsupported key type", k, err)
+		}
+	}
+}

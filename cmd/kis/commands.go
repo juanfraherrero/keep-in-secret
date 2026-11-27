@@ -75,6 +75,11 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return identityError(err, keyPath)
 	}
+	// Only age, ssh-ed25519 and ssh-rsa keys can receive the repository key.
+	// Check before writing anything, so an ECDSA or sk- key leaves no files.
+	if _, err := keys.ParseRecipient(pub); err != nil {
+		return err
+	}
 	me := *name
 	if me == "" {
 		me = ask("Your name (as partners will see it)", defaultName(r))

@@ -302,6 +302,21 @@ and every error names the command that fixes it. A summary for LLMs lives at
 
 ## Keys
 
+kis accepts **only three kinds of keys**, because it shares the repository key
+with [age](https://age-encryption.org), and these are the only ones age can
+encrypt to:
+
+| Key | Public key starts with | Where it comes from |
+|---|---|---|
+| age X25519 | `age1…` | `kis keygen` (recommended) |
+| SSH ed25519 | `ssh-ed25519 …` | `ssh-keygen -t ed25519`, or `github:USER` |
+| SSH RSA | `ssh-rsa …` | `ssh-keygen -t rsa`, or `github:USER` |
+
+Not supported: **ECDSA** (`ecdsa-sha2-…`), **security keys** (`sk-ssh-…`,
+`sk-ecdsa-…`) and **DSA**. kis refuses them with
+`unsupported key type`, before writing anything; `github:USER` skips them.
+If your only key is one of these, use `kis keygen`.
+
 - **age keys** (`kis keygen`): modern X25519, single-purpose. The file is
   unencrypted at rest, so protect your laptop.
 - **SSH keys** (ed25519 or RSA): reuse what you already have; `github:USER` pulls

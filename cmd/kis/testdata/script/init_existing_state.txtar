@@ -108,6 +108,12 @@ exec kis status --check
 cd $WORK/app4
 exec git init -q
 snapshot before
+# An ECDSA key is a valid SSH key, but age can't encrypt to it: refused
+# before anything is written.
+! exec kis init -y --name owner --identity $WORK/ec_key
+stderr 'unsupported key type "ecdsa-sha2-nistp256": use an ed25519 or RSA SSH key, or `kis keygen`'
+changed before
+! exists .gitencrypt
 ! exec kis init -y --name owner --identity $WORK/app/.kis/recipients.toml
 stderr 'can.t be opened as an age or SSH private key'
 changed before
@@ -127,3 +133,13 @@ C=3
 D=4
 -- garbage --
 this is not a key
+-- ec_key --
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTGLty+Nu3S9+WjMSVT+8qmNHftT1s2
+8RA9tLAvDc3i9keI8IkJwLVceQz++jRQ58WR8ZHFN2nk1Ga3vby7jTlAAAAAqHzykbt88p
+G7AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMYu3L427dL35aMx
+JVP7yqY0d+1PWzbxED20sC8NzeL2R4jwiQnAtVx5DP76NFDnxZHxkcU3aeTUZre9vLuNOU
+AAAAAgI7zH3usPCbGs1RS9hSxXIO0wvm6jW1+Ly9yUmyQ/G2UAAAAJdGVzdC1vbmx5AQID
+BAUGBw==
+-----END OPENSSH PRIVATE KEY-----

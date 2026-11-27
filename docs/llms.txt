@@ -84,7 +84,7 @@ Go, Rust, Python, Node, PHP and Ruby usually load `.env`, which the default
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
 - `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone
-- `kis keygen`, `kis pubkey`: personal key management
+- `kis keygen`, `kis pubkey`: personal key management. Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
 
 ## Docs
 
