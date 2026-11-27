@@ -1,0 +1,146 @@
+# kis init and kis sync run the same sync process (groups, .gitattributes,
+# .gitignore, encrypt + stage, agent notes), so they end in the same place.
+
+# 1. kis sync right after kis init changes nothing.
+cd $WORK/fresh
+exec git init -q
+exec kis init -y --name owner
+stdout '✓ updated \.gitattributes from \.gitencrypt'
+snapshot afterinit
+exec kis sync
+stdout '✓ \.gitattributes already up to date'
+! stdout 'staged encrypted'
+! stdout 'updated AGENTS'
+changed afterinit
+
+# 2. init with the default .gitencrypt == init with less, then the default
+# and kis sync.
+cd $WORK/a
+exec git init -q
+exec kis init -y --name owner
+stdout '✓ staged encrypted: .*\.env\.production'
+
+cd $WORK/b
+exec git init -q
+cp $WORK/only-env .gitencrypt
+exec kis init -y --name owner
+stdout 'using existing \.gitencrypt'
+exec git ls-files .env.production
+! stdout .
+cp $WORK/a/.gitencrypt .gitencrypt
+exec kis sync
+stdout '✓ updated \.gitattributes from \.gitencrypt'
+stdout '✓ staged encrypted: .*\.env\.production'
+
+cmp $WORK/a/.gitencrypt $WORK/b/.gitencrypt
+cmp $WORK/a/.gitattributes $WORK/b/.gitattributes
+cmp $WORK/a/.gitignore $WORK/b/.gitignore
+grep '^!/\.env$' .gitignore
+grep '^!/apps/api/\.env$' .gitignore
+exec git diff --cached --name-only
+cp stdout $WORK/staged-b
+cd $WORK/a
+exec git diff --cached --name-only
+cmp stdout $WORK/staged-b
+stdout '^apps/api/\.env$'
+! stdout '\.env\.example'
+stored : .env .env.production apps/api/.env
+cd $WORK/b
+stored : .env .env.production apps/api/.env
+
+# 3. A gitignored secret is un-ignored and staged in the same run: kis init
+# did it above for .env; kis sync does it for a new pattern.
+cd $WORK/fresh
+exec git commit -qm init
+cp $WORK/token secrets.json
+cp $WORK/ignore-secrets .gitignore
+exec git add .gitignore
+exec git commit -qm 'ignore secrets.json'
+cp $WORK/with-secrets .gitencrypt
+exec kis sync
+stdout '! ignored by \.gitignore: secrets\.json'
+stdout '✓ un-ignored them in \.gitignore'
+stdout '✓ staged encrypted: secrets\.json'
+grep '^!/secrets\.json$' .gitignore
+stored : secrets.json
+
+# 4. --no-agents stays off: kis sync only refreshes a section that exists.
+cd $WORK/noagents
+exec git init -q
+exec kis init -y --name owner --no-agents
+! exists AGENTS.md
+exec kis sync
+! stdout 'AGENTS'
+! exists AGENTS.md
+
+# 5. A file leaving .gitencrypt goes back to plaintext through kis sync.
+cd $WORK/fresh
+exec git commit -qm 'share secrets.json'
+stored HEAD secrets.json
+cp $WORK/without-secrets .gitencrypt
+exec kis sync
+attr secrets.json filter unspecified
+! stored : secrets.json
+cmp secrets.json $WORK/token
+exec git commit -qm 'secrets.json is public now'
+! stored HEAD secrets.json
+
+# Dropping it while locked is refused, and still works once unlocked: the
+# index keeps saying the file was encrypted until the sync succeeds.
+cp $WORK/with-secrets .gitencrypt
+exec kis sync
+stored : secrets.json
+exec git commit -qm 'encrypt secrets.json again'
+exec kis lock
+encrypted secrets.json
+cp $WORK/without-secrets .gitencrypt
+! exec kis sync
+stderr 'secrets\.json would stop being encrypted, which needs the plaintext: repository is locked'
+exec kis unlock
+exec kis sync
+! stored : secrets.json
+cmp secrets.json $WORK/token
+exec git commit -qm 'public again'
+! stored HEAD secrets.json
+exec git status --porcelain
+! stdout .
+
+-- fresh/.gitignore --
+.env
+-- fresh/.env --
+A=1
+-- noagents/.env --
+A=1
+-- a/.gitignore --
+.env
+-- a/.env --
+A=1
+-- a/.env.production --
+P=1
+-- a/.env.example --
+A=
+-- a/apps/api/.env --
+API=1
+-- b/.gitignore --
+.env
+-- b/.env --
+A=1
+-- b/.env.production --
+P=1
+-- b/.env.example --
+A=
+-- b/apps/api/.env --
+API=1
+-- only-env --
+.env
+-- token --
+{"token":"t"}
+-- ignore-secrets --
+.env
+!/.env
+secrets.json
+-- with-secrets --
+.env
+secrets.json
+-- without-secrets --
+.env

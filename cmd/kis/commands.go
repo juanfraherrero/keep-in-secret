@@ -112,26 +112,16 @@ func cmdInit(args []string) error {
 	if err := wireGit(r); err != nil {
 		return err
 	}
-	if err := ensureGroups(r); err != nil {
+	notes := createNotes
+	if *noAgents {
+		notes = skipNotes
+	}
+	if err := syncFiles(r, notes); err != nil {
 		return err
 	}
-	if _, err := r.SyncAttributes(); err != nil {
-		return err
-	}
+	// Staging doesn't change HEAD, and syncFiles wrote the attributes this
+	// reads, so this finds secrets committed in plaintext before kis.
 	plainInHistory := committedPlaintext(r)
-	if err := syncAndStage(r); err != nil {
-		return err
-	}
-	step("generated .gitattributes and staged kis files")
-	if !*noAgents {
-		if err := writeAgentNotes(r, false); err != nil {
-			return err
-		}
-	}
-
-	if err := stageUntrackedSecrets(r); err != nil {
-		return err
-	}
 	if len(plainInHistory) > 0 {
 		warn("these were already committed in PLAINTEXT before: %s", strings.Join(plainInHistory, ", "))
 		warn("they are encrypted from now on, but old commits still contain them: rotate those secrets")
@@ -314,27 +304,105 @@ func wireGit(r *repo.Repo) error {
 	return nil
 }
 
-// syncAndStage regenerates .gitattributes, stages kis's own files and re-adds
-// every tracked file whose encryption may have changed: current secrets get
-// encrypted, files dropped from .gitencrypt go back to plaintext.
-func syncAndStage(r *repo.Repo) error {
+// agentNotes says what syncFiles does with the kis section of AGENTS.md.
+type agentNotes int
+
+const (
+	createNotes  agentNotes = iota // kis init: write AGENTS.md (+ CLAUDE.md, … when they exist)
+	refreshNotes                   // kis sync: only refresh a section that exists
+	skipNotes                      // kis init --no-agents
+)
+
+// syncFiles applies .gitencrypt to the repository: groups, .gitattributes,
+// .gitignore, encryption and staging, and the agent notes. kis init and
+// kis sync both run it, so a change to how files are synced reaches both.
+func syncFiles(r *repo.Repo, notes agentNotes) error {
+	// What was encrypted before this run, from the .gitattributes in the
+	// index. Read it before step 4 stages the new one, or files dropped from
+	// .gitencrypt are not found and stay ciphertext in git.
 	previous, err := r.IndexedSecrets()
 	if err != nil {
 		return err
 	}
-	if _, err := r.SyncAttributes(); err != nil {
+
+	// 1. Every group .gitencrypt names has a key.
+	if err := ensureGroups(r); err != nil {
 		return err
 	}
-	if _, err := r.Git("add", "--", ".gitencrypt", ".gitattributes", repo.Dir); err != nil {
+
+	// 2. .gitencrypt -> .gitattributes.
+	changed, err := r.SyncAttributes()
+	if err != nil {
 		return err
 	}
+	if changed {
+		step("updated .gitattributes from .gitencrypt")
+	} else {
+		step(".gitattributes already up to date")
+	}
+
+	// 3. .gitignore: a secret it hides would never be shared.
+	addable, err := unignoreSecrets(r)
+	if err != nil {
+		return err
+	}
+
+	// 4. Encrypt and stage.
+	if err := stageSecrets(r, previous); err != nil {
+		return err
+	}
+	if err := stageUntracked(r, addable); err != nil {
+		return err
+	}
+
+	// 5. The kis section coding agents read.
+	if notes == skipNotes {
+		return nil
+	}
+	return writeAgentNotes(r, notes == refreshNotes)
+}
+
+// unignoreSecrets offers to stop ignoring secrets hidden by .gitignore,
+// which is the usual state of a .env before kis. It returns the untracked
+// secrets that can be added.
+func unignoreSecrets(r *repo.Repo) ([]string, error) {
+	addable, ignored, err := r.UntrackedSecrets()
+	if err != nil || len(ignored) == 0 {
+		return addable, err
+	}
+	warn("ignored by .gitignore: %s", strings.Join(ignored, ", "))
+	if !confirm("Stop ignoring them so they are shared (encrypted)?", true) {
+		return addable, nil
+	}
+	if err := unignore(r, ignored); err != nil {
+		return nil, err
+	}
+	addable, stillIgnored, err := r.UntrackedSecrets()
+	if err != nil {
+		return nil, err
+	}
+	if len(stillIgnored) > 0 {
+		warn("still ignored (check nested .gitignore files): %s", strings.Join(stillIgnored, ", "))
+	} else {
+		step("un-ignored them in .gitignore")
+	}
+	return addable, nil
+}
+
+// stageSecrets stages kis's own files and re-adds every tracked file whose
+// encryption may have changed: current secrets get encrypted, files dropped
+// from .gitencrypt (in previous, no longer matched) go back to plaintext.
+func stageSecrets(r *repo.Repo, previous []string) error {
 	secrets, err := r.TrackedSecrets()
 	if err != nil {
 		return err
 	}
 	leaving := subtract(previous, secrets)
 	// The filter no longer applies to these, so decrypt any working copy
-	// still holding ciphertext before it is re-added as plaintext.
+	// still holding ciphertext before it is re-added as plaintext. This runs
+	// before .gitattributes is staged: when it fails (locked), the index
+	// still marks them encrypted, so the next kis sync finds them again
+	// instead of storing their ciphertext as plaintext.
 	for _, p := range leaving {
 		path := filepath.Join(r.Root, filepath.FromSlash(p))
 		data, err := os.ReadFile(path)
@@ -354,7 +422,26 @@ func syncAndStage(r *repo.Repo) error {
 			return err
 		}
 	}
+	if _, err := r.Git("add", "--", ".gitencrypt", ".gitattributes", repo.Dir); err != nil {
+		return err
+	}
 	return r.Renormalize(append(secrets, leaving...))
+}
+
+// stageUntracked offers to add, and so encrypt, untracked secrets.
+func stageUntracked(r *repo.Repo, addable []string) error {
+	if len(addable) == 0 {
+		return nil
+	}
+	if !confirm(fmt.Sprintf("Add and encrypt %s now?", strings.Join(addable, ", ")), true) {
+		warn("not staged yet: %s (run `git add` when ready)", strings.Join(addable, ", "))
+		return nil
+	}
+	if _, err := r.Git(append([]string{"add", "--"}, addable...)...); err != nil {
+		return err
+	}
+	step("staged encrypted: %s", strings.Join(addable, ", "))
+	return nil
 }
 
 func subtract(a, b []string) []string {
@@ -385,42 +472,6 @@ func committedPlaintext(r *repo.Repo) []string {
 		}
 	}
 	return out
-}
-
-// stageUntrackedSecrets offers to add secrets that are untracked or hidden by
-// .gitignore, which is the usual state of a .env before kis.
-func stageUntrackedSecrets(r *repo.Repo) error {
-	addable, ignored, err := r.UntrackedSecrets()
-	if err != nil {
-		return err
-	}
-	if len(ignored) > 0 {
-		warn("ignored by .gitignore: %s", strings.Join(ignored, ", "))
-		if confirm("Stop ignoring them so they are shared (encrypted)?", true) {
-			if err := unignore(r, ignored); err != nil {
-				return err
-			}
-			addable2, stillIgnored, err := r.UntrackedSecrets()
-			if err != nil {
-				return err
-			}
-			addable = addable2
-			if len(stillIgnored) > 0 {
-				warn("still ignored (check nested .gitignore files): %s", strings.Join(stillIgnored, ", "))
-			} else {
-				step("un-ignored them in .gitignore")
-			}
-		}
-	}
-	if len(addable) > 0 && confirm(fmt.Sprintf("Add and encrypt %s now?", strings.Join(addable, ", ")), true) {
-		if _, err := r.Git(append([]string{"add", "--"}, addable...)...); err != nil {
-			return err
-		}
-		step("staged encrypted: %s", strings.Join(addable, ", "))
-	} else if len(addable) > 0 {
-		warn("not staged yet: %s (run `git add` when ready)", strings.Join(addable, ", "))
-	}
-	return nil
 }
 
 func unignore(r *repo.Repo, paths []string) error {
@@ -1370,25 +1421,7 @@ func cmdSync(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureGroups(r); err != nil {
-		return err
-	}
-	changed, err := r.SyncAttributes()
-	if err != nil {
-		return err
-	}
-	if err := syncAndStage(r); err != nil {
-		return err
-	}
-	if changed {
-		step("updated .gitattributes from .gitencrypt")
-	} else {
-		step(".gitattributes already up to date")
-	}
-	if err := writeAgentNotes(r, true); err != nil {
-		return err
-	}
-	if err := stageUntrackedSecrets(r); err != nil {
+	if err := syncFiles(r, refreshNotes); err != nil {
 		return err
 	}
 	secrets, _ := r.TrackedSecrets()
