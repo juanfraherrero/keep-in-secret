@@ -716,6 +716,7 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 		return err
 	}
 	_, exists := rs[name]
+	wasIn := r.GroupsOf(name) // before this command
 	var pubs []string
 	switch {
 	case len(keyArgs) == 0 && !exists:
@@ -751,15 +752,22 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 			step("created group %s (you are a member as %s)", g, created)
 		}
 	}
-	// Replaced keys must also open the groups they were already in.
+	// Replaced keys must also open the groups they were already in. Groups
+	// this clone can't open keep the old access file; a member finishes them.
+	var notHere []string
 	if force && len(keyArgs) > 0 {
+		held := r.HeldGroups()
 		for _, g := range r.GroupsOf(name) {
 			if slices.Contains(groups, g) {
 				continue
 			}
+			if !slices.Contains(held, g) {
+				notHere = append(notHere, g)
+				continue
+			}
 			master, err := r.GroupKey(g)
 			if err != nil {
-				return fmt.Errorf("%s is in group %s, which you can't open to re-wrap for the new keys: %w", name, g, err)
+				return err
 			}
 			if err := r.WrapFor(g, name, master, pubs); err != nil {
 				return err
@@ -781,11 +789,15 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 	what := "added " + name + in
 	if exists && len(keyArgs) > 0 {
 		what = "replaced the keys of " + name
-		if in != "" {
-			what += ", added" + in
+		if newGroups := subtract(groups, wasIn); in != "" && len(newGroups) > 0 {
+			what += ", added to " + strings.Join(newGroups, ", ")
 		}
 	}
 	step("%s (%d key(s), %s)", what, len(pubs), keys.RecipientType(pubs[0]))
+	for _, g := range notHere {
+		note("%s is also in group %s, which you can't open: there only the old keys of %s work.", name, g, name)
+		note("A member of %s (or %s, from a clone unlocked with the old key) runs: kis add %s --group %s --force", g, name, name, g)
+	}
 	// Every key on a GitHub account can unlock: access is only as safe as the
 	// least protected of them, and removing one on GitHub doesn't revoke it.
 	if len(fromGitHub) > 0 {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	"golang.org/x/crypto/ssh"
@@ -169,5 +170,30 @@ func TestParseRecipientUnsupportedTypes(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unsupported key type") {
 			t.Errorf("ParseRecipient(%q) = %v, want unsupported key type", k, err)
 		}
+	}
+}
+
+// A GitHub that never answers must fail after GitHubTimeout, not hang.
+func TestGitHubTimeout(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	old, oldTimeout := GitHubKeysURL, GitHubTimeout
+	defer func() { GitHubKeysURL, GitHubTimeout = old, oldTimeout }()
+	GitHubKeysURL = srv.URL + "/%s.keys"
+	GitHubTimeout = 200 * time.Millisecond
+
+	done := make(chan error, 1)
+	go func() { _, err := ResolveRecipients("github:ana"); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "github:ana: no answer from GitHub after 200ms") {
+			t.Fatalf("want a timeout error, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("github:USER hangs when GitHub doesn't answer")
 	}
 }

@@ -182,6 +182,11 @@ the keys listed now, so the leaked key can't read new commits. Run it
 **after** `kis add --force`, or the new repository key is wrapped for the
 leaked key too.
 
+`kis add --force` re-wraps every group this clone can open. For a group it
+can't open, it says so (`NAME is also in group G, which you can't open`) and
+leaves your old access file there: from a clone unlocked with your old key,
+or by asking a member of G, run `kis add YOUR_NAME --group G --force`.
+
 If the key leaked, also know:
 
 - Rotating only protects commits made after it. With the leaked key, someone
@@ -274,6 +279,15 @@ could already decrypt stay readable to whoever has it: rotate the real
 credentials too.
 
 ## Access
+
+### `github:USER: no answer from GitHub after 15s`
+
+**Cause:** `kis add NAME github:USER` downloads the keys from
+`https://github.com/USER.keys`, and GitHub didn't answer in time: no network,
+a proxy, or GitHub is down. Nothing was changed.
+
+**What to do:** run it again once the network works, or ask the person for
+their public key and pass it instead: `kis add NAME KEY`.
 
 ### `none of your keys has access to this repository yet`
 
