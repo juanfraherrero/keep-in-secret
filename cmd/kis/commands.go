@@ -777,7 +777,14 @@ func addRecipient(r *repo.Repo, name string, keyArgs []string, groups []string, 
 	if len(r.Groups()) > 1 {
 		in = " to " + strings.Join(groups, ", ")
 	}
-	step("added %s%s (%d key(s), %s)", name, in, len(pubs), keys.RecipientType(pubs[0]))
+	what := "added " + name + in
+	if exists && len(keyArgs) > 0 {
+		what = "replaced the keys of " + name
+		if in != "" {
+			what += ", added" + in
+		}
+	}
+	step("%s (%d key(s), %s)", what, len(pubs), keys.RecipientType(pubs[0]))
 	// Every key on a GitHub account can unlock: access is only as safe as the
 	// least protected of them, and removing one on GitHub doesn't revoke it.
 	if len(fromGitHub) > 0 {
