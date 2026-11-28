@@ -1,0 +1,84 @@
+# kis add NAME NEW_KEY --force re-wraps every group you can open for the new
+# key. Groups you can't open keep NAME's old access file, and kis says who
+# can finish: a member of that group, or NAME from a clone unlocked with the
+# old key.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+as ana
+exec kis keygen
+pubkey OLD
+as owner
+exec kis add ana $OLD
+exec git commit -qm ana
+exec git push -q
+
+# Ana creates group secret; she is its only member.
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+cp $WORK/gitencrypt .gitencrypt
+cp $WORK/secret .env.secret
+exec kis sync
+exec git add -A
+exec git commit -qm 'secret group'
+exec git push -q
+
+# Ana replaces her key and sends the new public key.
+exec kis keygen --force
+readvar NEW stdout 'age1[a-z0-9]+'
+
+# The owner replaces it: default is re-wrapped, secret can't be, and kis says so.
+as owner
+cd $WORK/app
+exec git pull -q
+exec kis unlock
+snapshot before
+exec kis add ana $NEW --force
+stdout '✓ replaced the keys of ana \(1 key\(s\), age\)'
+stdout '→ ana is also in group secret, which you can''t open: there only the old keys of ana work\.'
+stdout 'A member of secret \(or ana, from a clone unlocked with the old key\) runs: kis add ana --group secret --force'
+changed before ~.kis/keys/ana.age ~.kis/recipients.toml
+exec git commit -qm 'ana new key'
+exec git push -q
+
+# With only the new key, ana reads the default group but not secret yet.
+as ana
+cd $WORK
+exec git clone -q $REMOTE fresh
+cd fresh
+exec kis unlock
+! encrypted .env
+encrypted .env.secret
+
+# Ana finishes it herself, from her old clone (unlocked with the old key).
+cd $WORK/ana
+exec git pull -q
+exec kis add ana --group secret --force
+stdout '✓ added ana to secret'
+exec git commit -qm 'ana new key in secret'
+exec git push -q
+
+# Now the new key opens everything.
+cd $WORK
+exec git clone -q $REMOTE fresh2
+cd fresh2
+exec kis unlock
+stdout 'groups: default, secret'
+cmp .env.secret $WORK/secret
+
+-- app/.env --
+API_KEY=secret
+-- gitencrypt --
+.env
+.env.secret @secret
+-- secret --
+TOKEN=only-ana

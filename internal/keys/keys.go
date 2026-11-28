@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -225,6 +226,10 @@ func RecipientType(s string) string {
 // KIS_GITHUB_KEYS_URL overrides it (end-to-end tests use a local server).
 var GitHubKeysURL = envOr("KIS_GITHUB_KEYS_URL", "https://github.com/%s.keys")
 
+// GitHubTimeout bounds a github:USER lookup, so a bad network fails instead
+// of hanging (coding agents can't tell a hang from slow work).
+var GitHubTimeout = 15 * time.Second
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -239,8 +244,13 @@ func ResolveRecipients(arg string) ([]string, error) {
 	switch {
 	case strings.HasPrefix(arg, "github:"):
 		user := strings.TrimPrefix(arg, "github:")
-		resp, err := http.Get(fmt.Sprintf(GitHubKeysURL, user))
+		client := http.Client{Timeout: GitHubTimeout}
+		resp, err := client.Get(fmt.Sprintf(GitHubKeysURL, user))
 		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				return nil, fmt.Errorf("github:%s: no answer from GitHub after %s; check the network, or pass the key itself", user, GitHubTimeout)
+			}
 			return nil, err
 		}
 		defer resp.Body.Close()
