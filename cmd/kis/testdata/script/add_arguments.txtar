@@ -1,0 +1,93 @@
+# kis add takes one NAME and that person's keys. Wrong arguments (several
+# names, names mixed with keys, a file that isn't a key, flags in any place)
+# are refused before anything is written, and the repository keeps working.
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+as ana
+exec kis keygen
+pubkey ANA
+as juan
+exec kis keygen
+pubkey JUAN
+as pedro
+exec kis keygen
+pubkey PEDRO
+as owner
+cd $WORK/app
+snapshot before
+
+# --- Several names, then their keys: refused at the first name, nothing written ---
+! exec kis add ana juan pedro $ANA $JUAN $PEDRO
+stderr 'not a public key: "juan"'
+! stdout 'added'
+changed before
+
+# --- Names and keys interleaved: same ---
+! exec kis add ana $ANA juan $JUAN pedro $PEDRO
+stderr 'not a public key: "juan"'
+changed before
+
+# --- A key argument that is a file, but not a public key ---
+cp $WORK/notakey juan
+snapshot with-file
+! exec kis add ana juan
+stderr 'not a public key'
+changed with-file
+rm juan
+
+# --- The name and key swapped: the key isn't a valid partner ---
+! exec kis add $ANA ana
+stderr 'not a public key: "ana"'
+changed before
+
+# --- Only a key, no name: refused ---
+! exec kis add $ANA
+stderr 'is not a partner yet'
+changed before
+
+# --- No arguments: usage ---
+! exec kis add
+stderr 'kis add NAME'
+changed before
+
+# --- A flag kis add doesn't have: usage, nothing written ---
+! exec kis add ana $ANA --bogus
+stderr 'flag provided but not defined: -bogus'
+changed before
+
+# --- Flags work in any position ---
+exec kis add --group default ana $ANA
+stdout '✓ added ana \(1 key\(s\), age\)'
+changed before +.kis/keys/ana.age ~.kis/recipients.toml
+exec git reset -q --hard
+
+# --- After all of that, the repository still works: add each one, they unlock ---
+exec kis add ana $ANA
+exec kis add juan $JUAN
+exec kis add pedro $PEDRO
+exec git commit -qm 'add partners'
+exec git push -q
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+cmp .env $WORK/app/.env
+as pedro
+cd $WORK
+exec git clone -q $REMOTE pedro
+cd pedro
+exec kis unlock
+cmp .env $WORK/app/.env
+
+-- notakey --
+this is not a key
+-- app/.env --
+API_KEY=secret
