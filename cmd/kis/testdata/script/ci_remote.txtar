@@ -28,7 +28,7 @@ exists .kis/keys/ci.age
 # output split. The first key stops working once this is committed and pushed.
 exec kis add ci --new-key --force
 stdout '\AAGE-SECRET-KEY-1[0-9A-Z]+\n\z'
-stderr '✓ added ci \(1 key\(s\), age\)'
+stderr '✓ replaced the keys of ci \(1 key\(s\), age\)'
 stderr 'The private key is on stdout'
 ! stderr 'AGE-SECRET-KEY'
 readvar CI_KEY stdout 'AGE-SECRET-KEY-1[0-9A-Z]+'

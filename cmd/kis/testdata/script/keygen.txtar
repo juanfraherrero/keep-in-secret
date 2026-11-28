@@ -89,6 +89,7 @@ stderr 'none of your keys has access'
 exec kis unlock --identity ${KIS_KEY}.bak
 ! encrypted .env
 exec kis add owner $NEW --force
+stdout '✓ replaced the keys of owner \(1 key\(s\), age\)'
 exec kis rotate
 exec git commit -qm 'Rotate key'
 exec git push -q
