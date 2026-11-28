@@ -1,0 +1,126 @@
+# kis keygen: create, reprint, replace with --force, and never lose a backup
+# without asking. Then the "my private key leaked" flow from
+# docs/troubleshooting.md, end to end with a partner.
+
+# --- 1. First run creates the key; the second only reprints it ---
+exec kis keygen
+stdout 'Created your kis key at '
+readvar FIRST stdout 'age1[a-z0-9]+'
+exec kis keygen
+stdout 'You already have a kis key'
+stdout $FIRST
+! exists ${KIS_KEY}.bak
+
+# --- 2. --force with no backup yet: nothing is lost, so it doesn't ask ---
+exec kis keygen --force
+stdout 'Created your kis key at '
+readvar SECOND stdout 'age1[a-z0-9]+'
+! stdout $FIRST
+grep $FIRST ${KIS_KEY}.bak
+grep $SECOND $KIS_KEY
+# The repositories still only know the old key: say what to do there.
+stdout 'Your previous key is now in .*identity\.bak'
+stdout 'kis add YOUR_NAME '$SECOND' --force'
+stdout 'kis rotate'
+
+# --- 3. --force while identity.bak exists, no terminal: refuse, change nothing ---
+! exec kis keygen --force
+stderr 'identity\.bak already exists'
+stderr 'deleted for good'
+stderr 'kis keygen --force -y'
+grep $FIRST ${KIS_KEY}.bak
+grep $SECOND $KIS_KEY
+
+# --- 4. At a terminal it asks; anything but yes changes nothing ---
+[unix] ttyin -stdin $WORK/no
+[unix] ! exec kis keygen --force
+[unix] stderr 'identity\.bak already exists\. It will be deleted and cannot be recovered\.'
+[unix] stderr 'Your current key is kept: it becomes the new identity\.bak\.'
+[unix] stderr 'Delete the old backup\? \[y/N\]: '
+[unix] grep $FIRST ${KIS_KEY}.bak
+[unix] grep $SECOND $KIS_KEY
+
+# --- 5. -y confirms: the oldest key is gone, the current one is the backup ---
+exec kis keygen --force -y
+readvar THIRD stdout 'age1[a-z0-9]+'
+grep $SECOND ${KIS_KEY}.bak
+grep $THIRD $KIS_KEY
+! grep $FIRST ${KIS_KEY}.bak
+
+# --- 6. KIS_IDENTITY points elsewhere: kis will keep using that key ---
+sshkey other@laptop $WORK/other_key
+env KIS_IDENTITY=$WORK/other_key
+exec kis keygen
+stdout 'KIS_IDENTITY is set'
+stdout 'kis uses that key'
+env KIS_IDENTITY=
+
+# --- 7. My private key leaked: replace it, re-wrap, rotate, push ---
+as owner
+cd $WORK/app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+as ana
+exec kis keygen
+pubkey ANA_KEY
+as owner
+exec kis add ana $ANA_KEY
+exec git commit -qm 'add ana'
+exec git push -q
+
+# A second clone of the owner's, still locked.
+cd $WORK
+exec git clone -q $REMOTE laptop2
+
+# The leaked key moves to identity.bak (the older backup from above is
+# deleted, hence -y); the repository doesn't know the new key.
+exec kis keygen --force -y
+readvar NEW stdout 'age1[a-z0-9]+'
+cd $WORK/laptop2
+! exec kis unlock
+stderr 'none of your keys has access'
+
+# The backup still unlocks a locked clone; re-wrap for the new key, then rotate.
+exec kis unlock --identity ${KIS_KEY}.bak
+! encrypted .env
+exec kis add owner $NEW --force
+exec kis rotate
+exec git commit -qm 'Rotate key'
+exec git push -q
+
+# The new key unlocks a fresh clone; the leaked one no longer does.
+cd $WORK
+exec git clone -q $REMOTE fresh
+cd fresh
+exec kis unlock
+cmp .env $WORK/app/.env
+cd $WORK
+exec git clone -q $REMOTE stolen
+cd stolen
+! exec kis unlock --identity ${KIS_KEY}.bak
+stderr 'none of your keys has access'
+
+# The partner pulls and runs kis unlock to get the new repository key.
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+cmp .env $WORK/app/.env
+
+# Every repository is done: the backup can go.
+as owner
+rm ${KIS_KEY}.bak
+cd $WORK/fresh
+exec kis unlock
+cmp .env $WORK/app/.env
+
+-- no --
+n
+-- app/.env --
+API_KEY=secret

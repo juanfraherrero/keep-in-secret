@@ -328,7 +328,7 @@ and every error names the command that fixes it. A summary for LLMs lives at
 | Command | What it does |
 |---|---|
 | `kis init [--identity PATH] [--name NAME] [--no-agents] [-y]` | Set up encryption in the repo |
-| `kis keygen [--force]` | Create your personal age key, print the public key |
+| `kis keygen [--force [-y]]` | Create your personal age key, or print it if it exists. `--force` replaces it, keeping the old one as `identity.bak` (it asks before deleting an older backup; `-y` confirms). Your repositories then still only know the old key: see [troubleshooting](docs/troubleshooting.md#my-private-key-leaked-or-i-replaced-it-with-kis-keygen---force) |
 | `kis pubkey [--identity PATH]` | Print the public keys kis uses here, and where each comes from |
 | `kis add NAME KEY\|github:USER\|FILE.pub… [--group G] [--identity PATH]` | Give someone access (to a group; omit the key for an existing partner) |
 | `kis add NAME --new-key [--group G]` | Add a CI runner or cloud agent; prints its private key once, alone on stdout, to pipe into `KIS_PRIVATE_KEY` |

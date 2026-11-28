@@ -512,9 +512,11 @@ func unignore(r *repo.Repo, paths []string) error {
 func cmdKeygen(args []string) error {
 	fs := newFlags("keygen")
 	force := fs.Bool("force", false, "replace an existing key (the old one is kept as identity.bak)")
+	fs.BoolVar(&assumeYes, "y", false, "with --force, delete an older identity.bak without asking")
 	parseFlags(fs, args)
 
 	path := keys.DefaultAgeIdentityPath()
+	replaced := false
 	if _, err := os.Stat(path); err == nil {
 		if !*force {
 			pub, err := keys.PublicKey(path)
@@ -523,11 +525,16 @@ func cmdKeygen(args []string) error {
 			}
 			fmt.Printf("You already have a kis key at %s\n\nYour public key (safe to share):\n\n    %s\n\n", path, pub)
 			printKeygenNext(pub)
+			noteOtherIdentity(path)
 			return nil
+		}
+		if err := confirmBackupLoss(path + ".bak"); err != nil {
+			return err
 		}
 		if err := os.Rename(path, path+".bak"); err != nil {
 			return err
 		}
+		replaced = true
 	}
 	pub, err := keys.Generate(path)
 	if err != nil {
@@ -536,7 +543,49 @@ func cmdKeygen(args []string) error {
 	fmt.Printf("Created your kis key at %s\nKeep that file private and backed up; it is what unlocks your repositories.\n\n", path)
 	fmt.Printf("Your public key (safe to share):\n\n    %s\n\n", pub)
 	printKeygenNext(pub)
+	if replaced {
+		// Repositories wrap the repository key for public keys, so they
+		// still only know the old one.
+		fmt.Printf("\nYour previous key is now in %s.bak. Repositories you were already in only know that one.\n", path)
+		fmt.Printf("In each of them, from an unlocked clone:  kis add YOUR_NAME %s --force\n", pub)
+		fmt.Println("If the old key leaked, also run `kis rotate` there; then commit and push.")
+		fmt.Println("Delete the backup once every repository is done (see docs/troubleshooting.md).")
+	}
+	noteOtherIdentity(path)
 	return nil
+}
+
+// confirmBackupLoss asks before --force deletes an older backup: it may be
+// the only copy of a key that still opens a repository. Without a terminal
+// only -y confirms.
+func confirmBackupLoss(bak string) error {
+	if _, err := os.Stat(bak); err != nil {
+		return nil
+	}
+	if assumeYes {
+		return nil
+	}
+	if !hasTerminal() {
+		return fmt.Errorf("%s already exists and would be deleted for good: it may be the only copy of an older key. Nothing was changed. To delete it and replace your key, run: kis keygen --force -y", bak)
+	}
+	fmt.Fprintf(os.Stderr, "%s already exists. It will be deleted and cannot be recovered.\n", filepath.Base(bak))
+	fmt.Fprintf(os.Stderr, "Your current key is kept: it becomes the new %s.\n", filepath.Base(bak))
+	if !confirm("Delete the old backup?", false) {
+		return errors.New("nothing was changed")
+	}
+	return nil
+}
+
+// noteOtherIdentity says when the key rule picks a key other than the one
+// keygen manages, so the public key just printed isn't the one kis uses.
+func noteOtherIdentity(path string) {
+	if v := strings.TrimSpace(os.Getenv(keys.EnvPrivateKey)); v != "" {
+		fmt.Printf("\nNote: %s is set, so kis uses that key, not this one.\n", keys.EnvPrivateKey)
+		return
+	}
+	if v := strings.TrimSpace(os.Getenv(keys.EnvIdentityPath)); v != "" && filepath.Clean(v) != filepath.Clean(path) {
+		fmt.Printf("\nNote: %s is set (%s), so kis uses that key, not this one.\n", keys.EnvIdentityPath, v)
+	}
 }
 
 func printKeygenNext(pub string) {

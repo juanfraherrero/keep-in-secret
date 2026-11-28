@@ -55,6 +55,8 @@ is plaintext, git history and the remote only hold ciphertext.
   ~$HOME/.ssh/id_ed25519~, ~$HOME/.ssh/id_rsa~. ~kis pubkey~ shows which. If the key is elsewhere, pass
   ~--identity PATH~ (PATH is the developer's private key file: ask them, never
   guess or search for keys), or have them set ~KIS_IDENTITY=PATH~.
+- Never run ~kis keygen --force~ yourself: it replaces the developer's key, and
+  their repositories still only know the old one. Ask the developer.
 - Never copy secret values into code, logs, commit messages, pull requests or
   chat. If a task seems to need one, refer to the variable by name, or ask the
   developer.

@@ -145,6 +145,54 @@ Repositories you were already in then need a partner to run
 `kis add YOUR_NAME NEW_KEY --force`. That re-wraps the same repository key for
 your new key; no files are re-encrypted.
 
+### `identity.bak already exists and would be deleted for good`
+
+**Cause:** `kis keygen --force` moves your current key to `identity.bak`, and
+an `identity.bak` from an earlier `--force` is already there. Replacing it
+deletes that older key, which may be the only copy of a key that still opens
+a repository. At a terminal kis asks first; without one it refuses. Nothing
+was changed.
+
+**What to do:** if every repository you are in already knows your current key
+(you re-wrapped them, see below), the older backup is no longer needed: run
+`kis keygen --force -y`. If you are not sure, copy `identity.bak` somewhere
+safe first.
+
+### My private key leaked, or I replaced it with `kis keygen --force`
+
+**Cause:** each repository wraps its key for your **public** key, so after
+`kis keygen --force` your repositories still only know the old one, now in
+`identity.bak`. kis doesn't know which repositories you are in.
+
+**What to do:** run `kis keygen --force` once (the old key moves to
+`~/.config/kis/identity.bak`). Then, in each repository you are in, in this
+order:
+
+```sh
+# only if this clone is locked:
+kis unlock --identity ~/.config/kis/identity.bak
+kis add YOUR_NAME NEW_KEY --force   # NEW_KEY: the public key keygen printed
+kis rotate                  # only if the old key leaked
+git commit -m "Replace my kis key" && git push
+```
+
+`kis add --force` makes your access file open only with the new key. If the
+old key leaked, `kis rotate` creates a new repository key, wrapped only for
+the keys listed now, so the leaked key can't read new commits. Run it
+**after** `kis add --force`, or the new repository key is wrapped for the
+leaked key too.
+
+If the key leaked, also know:
+
+- Rotating only protects commits made after it. With the leaked key, someone
+  with a copy of the repository can still decrypt everything committed
+  before, so change the secret values themselves (passwords, API keys).
+- Every partner has to run `kis unlock` after pulling. Until they do, the
+  files they commit are still encrypted with the old repository key, which
+  the leaked key opens (issue #8).
+
+When every repository is done, delete `~/.config/kis/identity.bak`.
+
 ### `PATH is a public key; pass the private key file instead`
 
 **Cause:** `--identity` points at a `.pub` file. kis needs the private half,

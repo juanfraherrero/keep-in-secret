@@ -47,6 +47,8 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
      `~/.ssh/id_rsa`.
   A set but unusable source is an error, never a fallback. `kis pubkey` and
   the `unlock` message say which key was used.
+- Never run `kis keygen --force` yourself: it replaces the developer's key, and
+  their repositories still only know the old one. Ask the developer.
 - If the developer's private key is not in a standard place, pass
   `--identity PATH` to each of those commands, where PATH is their **private**
   key file (ask them for the path; never guess or search for keys). kis does
@@ -107,7 +109,8 @@ matches at the repository root; use `**/` to match at any depth (monorepos).
 - `kis remove NAME [--group G] [--no-rotate]`: revoke and rotate the affected keys
 - `kis rotate [--group G]`: new key(s), re-encrypt
 - `kis unlock [--identity PATH]` (or `KIS_PRIVATE_KEY`) / `kis lock [--force]`: decrypt / re-encrypt this clone
-- `kis keygen`, `kis pubkey [--identity PATH]`: personal key management (`pubkey` prints the keys kis uses here and where each comes from). Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
+- `kis keygen [--force [-y]]`: create the developer's age key, or print it if it exists. `--force` replaces it (the old one becomes `identity.bak`; an older backup is deleted only after a prompt or `-y`), and repositories then still only know the old key
+- `kis pubkey [--identity PATH]`: personal key management (`pubkey` prints the keys kis uses here and where each comes from). Accepted keys: age (`age1…`), SSH ed25519, SSH RSA; ECDSA and security keys (`sk-`) are refused
 
 ## Docs
 
