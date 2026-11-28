@@ -1,0 +1,126 @@
+# Adding partners to groups: one group per command, a group-only partner can
+# join the default group later, and what to do when the only member of a
+# group leaves (docs/troubleshooting.md).
+
+cd app
+exec git init -q
+exec kis init -y --name owner
+exec git add .
+exec git commit -qm init
+exec git remote add origin $REMOTE
+exec git push -q -u origin main
+
+as ana
+exec kis keygen
+pubkey ANA
+as ops
+exec kis keygen
+pubkey OPS
+as owner
+cd $WORK/app
+
+# --- A new partner straight into a group is in that group only ---
+exec kis add ops $OPS --group prod
+stdout '✓ added ops to prod'
+exists .kis/keys/prod/ops.age
+! exists .kis/keys/ops.age
+
+# --- Later the same partner joins the default group, reusing their key ---
+exec kis add ops
+stdout '✓ added ops to default \(1 key\(s\), age\)'
+exists .kis/keys/ops.age
+exists .kis/keys/prod/ops.age
+! exec kis add ops
+stderr 'ops is already in group default'
+
+exec git commit -qm ops
+exec git tag before-ana
+exec kis add ana $ANA
+exec git commit -qm ana
+exec git push -q
+snapshot before
+
+# --- An existing partner with a key and a group: refused, nothing written ---
+! exec kis add ana $ANA --group prod
+stderr 'ana already has access; use --force to replace their keys, or omit the key to add them to a group: kis add ana --group GROUP'
+changed before
+
+# --- One group per command, in add, remove and rotate ---
+! exec kis add ana --group prod,staging
+stderr '--group takes one group: run the command once per group'
+changed before
+! exec kis remove ana --group default,prod
+stderr '--group takes one group: run the command once per group'
+changed before
+! exec kis rotate --group default,prod
+stderr '--group takes one group: run the command once per group'
+changed before
+
+# --- The only member of a group leaves ---
+# Ana creates group secret: she is its only member.
+as ana
+cd $WORK
+exec git clone -q $REMOTE ana
+cd ana
+exec kis unlock
+cp $WORK/gitencrypt .gitencrypt
+cp $WORK/secret .env.secret
+exec kis sync
+stdout 'created group secret with you \(ana\) as its member'
+exec git add -A
+exec git commit -qm 'secret group'
+exec git push -q
+
+# The owner can't remove her: nobody else could decrypt that group.
+as owner
+cd $WORK/app
+exec git pull -q
+exec kis unlock
+encrypted .env.secret
+! exec kis remove ana
+stderr 'cannot remove the last member of group secret'
+
+# The troubleshooting steps: revoke her from every group you can see...
+exec kis remove ana --group default
+stdout '✓ removed ana from default'
+exec git commit -qm 'remove ana from default'
+
+# ...then delete the group by hand, and recreate its secrets with new values.
+exec git rm -rq .kis/keys/secret
+# (delete ana's line from .kis/recipients.toml: here, the file as it was before she joined)
+exec git show before-ana:.kis/recipients.toml
+cp stdout .kis/recipients.toml
+cp $WORK/gitencrypt-default .gitencrypt
+exec git rm -q .env.secret
+exec kis sync
+exec kis status --check
+stdout 'safe to push    yes'
+! stdout '^  ana '
+! stdout '\.env\.secret'
+exec git add -A
+exec git commit -qm 'delete group secret'
+exec git push -q
+
+# Ana is out; the others still work.
+as ana
+cd $WORK/ana
+exec git pull -q
+! exec kis unlock
+stderr 'none of your keys has access'
+as ops
+cd $WORK
+exec git clone -q $REMOTE ops
+cd ops
+exec kis unlock
+stdout 'groups: default, prod'
+cmp .env $WORK/app/.env
+
+-- app/.env --
+API_KEY=secret
+-- gitencrypt --
+.env
+.env.secret @secret
+-- gitencrypt-default --
+.env
+-- secret --
+TOKEN=only-ana

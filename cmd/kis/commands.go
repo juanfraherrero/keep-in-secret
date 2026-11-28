@@ -640,7 +640,7 @@ func cmdPubkey(args []string) error {
 func cmdAdd(args []string) error {
 	fs := newFlags("add")
 	force := fs.Bool("force", false, "replace the keys of an existing partner")
-	groupFlag := fs.String("group", "", "groups to add them to, comma-separated (default: the default group)")
+	groupFlag := fs.String("group", "", "the group to add them to (default: the default group)")
 	newKey := fs.Bool("new-key", false, "create their key pair now and print the private key once (for CI and cloud agents)")
 	identityFlag(fs)
 	pos := parseFlags(fs, args)
@@ -687,20 +687,21 @@ func cmdAdd(args []string) error {
 	return nil
 }
 
-// parseGroups reads a --group flag; empty means the default group.
+// parseGroups reads a --group flag: one group, or empty for the default
+// group. One group per command keeps every write to a single group, so a
+// command never stops halfway through a list.
 func parseGroups(flag string) ([]string, error) {
-	if flag == "" {
+	g := strings.TrimSpace(flag)
+	if g == "" {
 		return []string{crypt.DefaultGroup}, nil
 	}
-	var out []string
-	for _, g := range strings.Split(flag, ",") {
-		g = strings.TrimSpace(g)
-		if !validName.MatchString(g) {
-			return nil, fmt.Errorf("invalid group %q: use letters, digits, '.', '_' or '-'", g)
-		}
-		out = append(out, g)
+	if strings.Contains(g, ",") {
+		return nil, errors.New("--group takes one group: run the command once per group")
 	}
-	return out, nil
+	if !validName.MatchString(g) {
+		return nil, fmt.Errorf("invalid group %q: use letters, digits, '.', '_' or '-'", g)
+	}
+	return []string{g}, nil
 }
 
 // addRecipient gives name access to groups. Without keyArgs, name must be
@@ -869,7 +870,7 @@ func cmdRemove(args []string) error {
 	fs := newFlags("remove")
 	noRotate := fs.Bool("no-rotate", false, "skip rotating the group keys (they could still decrypt future changes)")
 	force := fs.Bool("force", false, "rotate even with uncommitted changes to encrypted files")
-	groupFlag := fs.String("group", "", "only remove them from these groups, comma-separated (default: every group, and the partner list)")
+	groupFlag := fs.String("group", "", "only remove them from this group (default: every group, and the partner list)")
 	pos := parseFlags(fs, args)
 	if len(pos) != 1 {
 		fs.Usage()
@@ -966,7 +967,7 @@ func cmdRemove(args []string) error {
 func cmdRotate(args []string) error {
 	fs := newFlags("rotate")
 	force := fs.Bool("force", false, "rotate even with uncommitted changes to encrypted files")
-	groupFlag := fs.String("group", "", "groups to rotate, comma-separated (default: every group you are in)")
+	groupFlag := fs.String("group", "", "the group to rotate (default: every group you are in)")
 	parseFlags(fs, args)
 	r, err := openInitialized()
 	if err != nil {

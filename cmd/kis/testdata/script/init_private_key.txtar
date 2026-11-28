@@ -41,7 +41,8 @@ exec kis keygen
 pubkey OWNER
 as agent
 env KIS_PRIVATE_KEY=$AGENT_KEY
-exec kis add owner $OWNER --group default,prod
+exec kis add owner $OWNER
+exec kis add owner --group prod
 exec git add .
 exec git commit -qm 'kis setup'
 exec git push -q $REMOTE HEAD:main

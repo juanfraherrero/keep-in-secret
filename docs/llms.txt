@@ -73,6 +73,7 @@ A repository uses kis if it has a `.kis/` directory and a `.gitencrypt` file.
   for that group only. Files of a group this clone isn't in stay ciphertext:
   that is expected, commit around them; never try to decrypt or recreate them.
   Access: `kis add NAME --group GROUP` (run by a member of that group).
+  `--group` takes one group; run the command once per group.
 - Don't copy secret values into code, logs, commit messages, PRs or chat. If a
   task seems to need one, refer to the variable by name, or ask the developer.
 
