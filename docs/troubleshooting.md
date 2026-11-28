@@ -322,6 +322,40 @@ current key and can decrypt new secrets. Run `kis rotate` (it rotates every
 group you are in), and ask a member of each group you are not in to run it
 too. Then commit and push.
 
+### `cannot remove the last member of group G: nobody could decrypt its files`
+
+**Cause:** `kis remove NAME` removes NAME from every group, and NAME is the
+only member of group G. Nobody else holds G's key, so removing them would
+leave its files unreadable for everyone, and only a member of a group can
+remove someone from it. Being the person who ran `kis init` gives no extra
+rights. This usually happens when that partner created the group and then
+left the team.
+
+**What to do:** first revoke them from the groups you can see:
+
+```sh
+kis remove NAME --group default    # and once per other group you are in with them
+```
+
+If nobody left on the team is in G, its secrets are already lost to you, and
+you can delete the group by hand. kis has no command for this.
+
+```sh
+git rm -r .kis/keys/G
+# delete the line  NAME = [...]  from .kis/recipients.toml
+# delete the  @G  lines from .gitencrypt
+git rm FILE                        # each file that was in G
+kis sync
+git commit -m "Delete group G" && git push
+```
+
+NAME knew the values in G's files, and git history still holds them
+encrypted with G's key, which NAME has. Recreate those files with **new**
+values (new passwords, new API keys), not the old ones.
+
+If anyone on the team is still in G, don't delete it: ask them to run
+`kis remove NAME --group G`.
+
 ## Committing
 
 ### `these were already committed in PLAINTEXT before: FILE`

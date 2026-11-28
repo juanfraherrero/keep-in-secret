@@ -236,7 +236,8 @@ People outside a group still clone, pull, edit and commit as usual: that
 group's files just stay ciphertext in their clone. `kis status` shows each
 file's group and whether you can read it, and blocks (like the pre-commit
 check) a file encrypted with the wrong group's key. A file belongs to one
-group; to share it with more people, add them to that group. Without any
+group; to share it with more people, add them to that group. `--group`
+takes one group: to add someone to two, run `kis add` twice. Without any
 `@group`, kis never mentions groups.
 
 ## CI and cloud agents
@@ -265,6 +266,13 @@ git commit -m "ci access" && git push
 
 `--new-key` creates the key pair in memory and prints the private key once; it
 is saved nowhere. Store it as a `KIS_PRIVATE_KEY` secret on the platform.
+
+Why not `kis keygen`? keygen creates a key for **you** and keeps it on your
+disk. A CI runner or cloud agent can't run it and send you its public key, so
+`--new-key` creates the pair for it: the public half becomes the partner, and
+the private half goes once into the platform's secrets, never onto a disk.
+NAME is any name you choose (`ci`, `deploy`, `agent-1`); give each machine
+its own, so one can be revoked without touching the others.
 
 The private key is the only thing `--new-key` writes to stdout, on one line;
 the `✓ added` line and the instructions go to stderr. At a terminal you see
