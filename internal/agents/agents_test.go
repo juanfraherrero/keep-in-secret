@@ -23,6 +23,7 @@ func TestBlockAndLLMsTxtAgree(t *testing.T) {
 			"If a task seems to need one, refer to the variable by name, or ask the developer.",
 			"`kis status --check --since origin/main`",
 			"`.env*.local` files are local: never commit them; don't remove them from `.gitignore`.",
+			"Never run `kis keygen --force` yourself: it replaces the developer's key, and their repositories still only know the old one. Ask the developer.",
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s lacks %q", name, want)
